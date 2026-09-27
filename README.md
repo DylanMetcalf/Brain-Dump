@@ -22,6 +22,8 @@ npm run simulate       # prints the 30-day simulation report (add -- --transcrip
 
 Open the app, tap **Start**, choose a name for your assistant ("Milo it is."), and say what's on your mind.
 
+**Try it on a phone without a server:** `npm run build:phone` produces `dist-phone/brain-dump.html`, a single file where the whole engine runs in the browser and data stays on the device. It's type-only (no voice) and has no integrations.
+
 Desktop (tray icon, global shortcut, floating window): `cd desktop && npm install && BRAIN_DUMP_SERVER=http://localhost:8787 npm start`. Press **Cmd/Ctrl+Shift+Space** anywhere to talk.
 
 ### Configuration

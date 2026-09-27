@@ -4,20 +4,30 @@
 const TOKEN_KEY = 'bd.token';
 const QUEUE_KEY = 'bd.queue';
 const BASE = (window.BRAIN_DUMP_SERVER ?? '').replace(/\/$/, '');
+/** Phone test build: the engine runs in this browser; no server, no account. */
+export const LOCAL = window.BRAIN_DUMP_LOCAL ?? null;
 
 export const auth = {
   get token() {
-    return localStorage.getItem(TOKEN_KEY);
+    if (LOCAL) return 'local';
+    try {
+      return localStorage.getItem(TOKEN_KEY);
+    } catch {
+      return null;
+    }
   },
   set token(t) {
-    if (t) localStorage.setItem(TOKEN_KEY, t);
-    else localStorage.removeItem(TOKEN_KEY);
+    try {
+      if (t) localStorage.setItem(TOKEN_KEY, t);
+      else localStorage.removeItem(TOKEN_KEY);
+    } catch {}
   },
 };
 
 export class NetworkError extends Error {}
 
 export async function api(path, { method, body } = {}) {
+  if (LOCAL) return LOCAL.request(path, method ?? (body ? 'POST' : 'GET'), body);
   let res;
   try {
     res = await fetch(BASE + path, {
@@ -49,6 +59,7 @@ export function newClientId() {
 // ---------------------------------------------------------------------------
 
 export function queued() {
+  if (LOCAL) return [];
   try {
     return JSON.parse(localStorage.getItem(QUEUE_KEY) ?? '[]');
   } catch {
@@ -57,7 +68,9 @@ export function queued() {
 }
 
 function saveQueue(q) {
-  localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
+  try {
+    localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
+  } catch {}
 }
 
 export function enqueue(text) {
@@ -111,6 +124,7 @@ export async function say(text, sessionId) {
 }
 
 export function openStream(onEvent) {
+  if (LOCAL) return LOCAL.subscribe(onEvent);
   if (!auth.token || !('EventSource' in window)) return () => {};
   let es;
   let closed = false;

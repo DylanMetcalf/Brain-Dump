@@ -1,15 +1,18 @@
 // Brain Dump web/PWA client. Deliberately small: one place to talk, a few lists,
 // and full control in settings. The assistant does the sorting.
 
-import { api, auth, enqueue, flushQueue, openStream, queued, say, NetworkError } from './api.js';
-import { createVoice, voiceSupported } from './voice.js';
+import { api, auth, enqueue, flushQueue, openStream, queued, say, NetworkError, LOCAL } from './api.js';
+import { createVoice, voiceSupported as voiceAvailable } from './voice.js';
+
+// The phone test build runs inside a frame that refuses the microphone.
+const voiceSupported = voiceAvailable && !LOCAL;
 
 const params = new URLSearchParams(location.search);
 const MINI = params.has('mini');
 if (MINI) document.body.classList.add('mini');
 
 const ui = {
-  sessionId: sessionStorage.getItem('bd.session') || null,
+  sessionId: (() => { try { return sessionStorage.getItem('bd.session'); } catch { return null; } })(),
   convo: [],
   overview: null,
   state: null,
@@ -101,8 +104,10 @@ async function startSession() {
 
 function setSession(id) {
   ui.sessionId = id;
-  if (id) sessionStorage.setItem('bd.session', id);
-  else sessionStorage.removeItem('bd.session');
+  try {
+    if (id) sessionStorage.setItem('bd.session', id);
+    else sessionStorage.removeItem('bd.session');
+  } catch {}
 }
 
 function pushAssistant(r) {
@@ -167,7 +172,7 @@ function renderOrb() {
   orb.setAttribute('aria-label', ui.voiceState === 'idle' ? 'Tap to talk' : 'Stop listening');
   orb.setAttribute('aria-pressed', ui.voiceState === 'idle' ? 'false' : 'true');
   const st = document.getElementById('status');
-  if (st) st.textContent = ui.status || (voiceSupported ? '' : 'Voice isn’t available in this browser — type instead.');
+  if (st) st.textContent = ui.status || (voiceSupported ? '' : LOCAL ? 'Test version: type your thoughts below. Voice works in the full app.' : 'Voice isn’t available in this browser — type instead.');
 }
 
 function renderConvo() {
@@ -210,7 +215,7 @@ function renderHomeCards() {
 function renderHome() {
   app.replaceChildren(
     h('header', { class: 'top', id: 'top' }),
-    h('section', { class: 'hero' }, h('h1', {}, "What's on your mind?"), h('p', {}, 'Tap and talk, or type. Say “that’s all” when you’re done.')),
+    h('section', { class: 'hero' }, h('h1', {}, "What's on your mind?"), h('p', {}, LOCAL ? 'Type it the way you’d say it. Say “that’s all” when you’re done.' : 'Tap and talk, or type. Say “that’s all” when you’re done.')),
     h('div', { class: 'orb-wrap' }, h('button', { id: 'orb', class: 'orb idle', onclick: onOrb, 'aria-label': 'Tap to talk' }, MIC())),
     h('div', { class: 'status-line', id: 'status', 'aria-live': 'polite' }),
     h('div', { class: 'interim', id: 'interim' }),
@@ -239,7 +244,7 @@ async function onOrb() {
     return;
   }
   if (!ui.sessionId) await startSession();
-  if (!voice.start()) {
+  if (!voiceSupported || !voice.start()) {
     document.getElementById('say')?.focus();
   }
 }
@@ -350,7 +355,7 @@ async function renderSettings() {
       h('div', { class: 'row' }, h('label', {}, '“Clear” emails means'), select(p.preferences.clearMeans, { archive: 'Archive (undoable)', delete: 'Delete' }, (v) => patchProfile({ preferences: { clearMeans: v } }))),
       h('div', { class: 'row' }, h('label', {}, 'Remind me before events (min)'), h('input', { type: 'number', min: 0, max: 240, value: p.preferences.defaultEventLeadMin, onchange: (e) => patchProfile({ preferences: { defaultEventLeadMin: Number(e.target.value) } }) })),
       h('div', { class: 'row' }, h('label', {}, 'Sunday briefing'), select(String(p.preferences.weeklyBriefing.enabled), { true: 'On', false: 'Off' }, (v) => patchProfile({ preferences: { weeklyBriefing: { ...p.preferences.weeklyBriefing, enabled: v === 'true' } } }))),
-      h('div', { class: 'row' }, h('label', {}, 'Notifications on this device'), h('button', { class: 'btn ghost small', onclick: async () => { const r = await Notification.requestPermission(); toast(r === 'granted' ? 'Notifications on.' : 'Notifications are off.'); } }, 'Allow'))),
+      LOCAL ? null : h('div', { class: 'row' }, h('label', {}, 'Notifications on this device'), h('button', { class: 'btn ghost small', onclick: async () => { const r = await Notification.requestPermission(); toast(r === 'granted' ? 'Notifications on.' : 'Notifications are off.'); } }, 'Allow'))),
 
     h('section', { class: 'card' }, h('h2', {}, 'What I can do'),
       h('p', { class: 'empty' }, 'I only act within what you allow. Anything involving money, or that can’t be undone, always comes back to you.'),
@@ -374,7 +379,7 @@ async function renderSettings() {
           h('button', { class: 'btn ghost small', onclick: async () => { await api(`/api/routines/${r.id}`, { method: 'DELETE' }); await loadState(); renderSettings(); } }, 'Remove'))))
         : h('p', { class: 'empty' }, 'When I notice something you do regularly, I’ll ask before remembering it.')),
 
-    h('section', { class: 'card' }, h('h2', {}, 'Connected services'),
+    LOCAL ? null : h('section', { class: 'card' }, h('h2', {}, 'Connected services'),
       integrations?.available?.google
         ? [
           h('p', { class: 'empty' }, s.integrations.google ? `Google connected: ${s.integrations.google.scopes.join(', ')}` : 'Connect the tools you already use. You choose exactly what I can reach.'),
@@ -387,13 +392,15 @@ async function renderSettings() {
         : h('p', { class: 'empty' }, 'This server has no Google credentials configured. Your Brain Dump calendar can still be subscribed to from any calendar app:'),
       h('div', { class: 'chips' }, h('button', { class: 'chip', onclick: async () => { const r = await api('/api/calendar/feed', { body: {} }); prompt('Subscribe to this private calendar link in Apple/Google/Outlook Calendar:', r.url.startsWith('http') ? r.url : location.origin + r.url); } }, 'Calendar subscription link'))),
 
-    h('section', { class: 'card' }, h('h2', {}, 'Devices'),
+    LOCAL ? null : h('section', { class: 'card' }, h('h2', {}, 'Devices'),
       h('ul', { class: 'list' }, devices.devices.map((d) => h('li', {}, h('span', { class: 'grow' }, d.name, d.current ? ' (this device)' : '', h('div', { class: 'sub' }, `last seen ${new Date(d.lastSeenAt).toLocaleString()}`)),
         !d.current ? h('button', { class: 'btn ghost small', onclick: async () => { await api(`/api/devices/${d.id}`, { method: 'DELETE' }); renderSettings(); } }, 'Remove') : null))),
       h('div', { class: 'chips' }, h('button', { class: 'chip', onclick: async () => { const r = await api('/api/auth/pair/start', { body: {} }); pairBox.replaceChildren(h('p', { class: 'empty' }, 'On your other device choose “I already use Brain Dump” and enter:'), h('div', { class: 'code' }, r.code), h('p', { class: 'empty' }, 'Valid for 10 minutes, once.')); } }, 'Add another device')),
       pairBox),
 
-    h('section', { class: 'card' }, h('h2', {}, 'Your data'),
+    LOCAL ? h('section', { class: 'card' }, h('h2', {}, 'Test data'),
+      h('p', { class: 'empty' }, 'This test version keeps everything in this browser on this phone only. Nothing is sent anywhere.'),
+      resetButton()) : h('section', { class: 'card' }, h('h2', {}, 'Your data'),
       h('p', { class: 'empty' }, 'Encrypted at rest. Nothing is recorded unless you tap to talk.'),
       h('div', { class: 'chips' },
         h('button', { class: 'chip', onclick: exportData }, 'Export everything'),
@@ -402,6 +409,21 @@ async function renderSettings() {
     nav(),
   );
   renderTop();
+}
+
+function resetButton() {
+  const btn = h('button', { class: 'btn ghost small', onclick: async () => {
+    if (btn.dataset.armed !== '1') {
+      btn.dataset.armed = '1';
+      btn.textContent = 'Tap again to erase everything';
+      return;
+    }
+    await api('/api/account', { method: 'DELETE', body: { confirm: 'delete everything' } });
+    try { sessionStorage.clear(); } catch {}
+    location.hash = '';
+    location.reload();
+  } }, 'Start over');
+  return btn;
 }
 
 async function connectGoogle(services) {
@@ -575,7 +597,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+if (!LOCAL && 'serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
 boot().catch((err) => {
   app.replaceChildren(h('p', { class: 'boot' }, `Couldn't start: ${err.message}`));

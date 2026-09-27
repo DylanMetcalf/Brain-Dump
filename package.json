@@ -1,0 +1,22 @@
+{
+  "name": "brain-dump",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Brain Dump — a voice-first, context-aware personal life assistant. Get it out of your head; it helps with the rest.",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "simulate": "npm run build && node dist/sim/run.js",
+    "start": "node dist/server/main.js",
+    "dev": "npm run build && node dist/server/main.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

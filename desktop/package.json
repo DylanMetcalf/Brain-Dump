@@ -1,0 +1,9 @@
+{
+  "name": "brain-dump-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Brain Dump desktop: tray icon, global shortcut, tiny floating window.",
+  "main": "main.js",
+  "scripts": { "start": "electron ." },
+  "devDependencies": { "electron": "^33.0.0" }
+}

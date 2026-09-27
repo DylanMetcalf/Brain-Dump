@@ -1,0 +1,16 @@
+{
+  "name": "Brain Dump",
+  "short_name": "Brain Dump",
+  "description": "Get it out of your head. I'll help with the rest.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f4ef",
+  "theme_color": "#3b5bdb",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Talk", "short_name": "Talk", "description": "Start talking straight away", "url": "/?talk=1" },
+    { "name": "What still needs me?", "short_name": "Needs me", "url": "/#home" }
+  ]
+}

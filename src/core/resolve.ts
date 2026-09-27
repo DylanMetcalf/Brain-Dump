@@ -232,6 +232,11 @@ export function pickOption(
   }
   const byWhen = candidates.filter((c) => c.start && (when.date || when.weekday !== undefined || when.time) && matchesWhen(c.start, when, tz));
   if (byWhen.length === 1) return { picked: byWhen };
+  if (when.part) {
+    const [lo, hi] = { morning: [0, 12], lunchtime: [11, 14], afternoon: [12, 17], evening: [17, 24], tonight: [17, 24], later: [12, 24] }[when.part];
+    const byPart = candidates.filter((c) => c.start && zonedParts(c.start, tz).hour >= lo && zonedParts(c.start, tz).hour < hi);
+    if (byPart.length === 1) return { picked: byPart };
+  }
   const byTitle = candidates.map((c) => ({ c, s: matchScore(a, c.title) })).filter((x) => x.s >= 0.6);
   if (byTitle.length === 1) return { picked: [byTitle[0].c] };
   const byLabel = candidates.filter((c) => a.includes(c.label.toLowerCase()));

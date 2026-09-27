@@ -174,7 +174,18 @@ export function segment(text: string): string[] {
     }
     if (current.trim()) out.push(current.trim());
   }
-  return out.map((s) => s.replace(/^[,;\s]+|[,;\s]+$/g, '')).filter((s) => s.length > 0);
+  // "Pilates Tuesday at 7pm and pilates Thursday at 7am": two timed things joined by "and".
+  const expanded: string[] = [];
+  for (const c of out) {
+    const parts = c.split(/\s+and\s+/i);
+    const timed = (x: string) => {
+      const p = parseWhen(x, new Date(0), 'UTC');
+      return !!p.time && (p.date !== undefined || p.weekday !== undefined) && p.rest.length > 1;
+    };
+    if (parts.length === 2 && timed(parts[0]) && timed(parts[1])) expanded.push(...parts);
+    else expanded.push(c);
+  }
+  return expanded.map((s) => s.replace(/^[,;\s]+|[,;\s]+$/g, '')).filter((s) => s.length > 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -374,11 +385,11 @@ const MATCHERS: Matcher[] = [
 
   // Waiting states
   (t, o) => {
-    let m = t.match(/^([a-z]+) (?:still )?(?:hasn'?t|has not|didn'?t|did not|never|hasnt) (?:replied|responded|got back|gotten back|answered|confirmed|sent|come back|written back|called back|rung back|paid)(?: (?:to )?me)?(?: yet)?(?: (?:about|on|re|regarding|with|for) (.+))?$/);
+    let m = t.match(/^([a-z]+(?: [a-z]+)?) (?:still )?(?:hasn'?t|has not|didn'?t|did not|never|hasnt) (?:replied|responded|got back|gotten back|answered|confirmed|sent|come back|written back|called back|rung back|paid)(?: (?:to )?me)?(?: yet)?(?: (?:about|on|re|regarding|with|for) (.+))?$/);
     if (m) return { kind: 'waiting', raw: o, personName: m[1], about: m[2] ?? '', direction: 'them' };
     m = t.match(/^(?:i'?m |i am |still )?waiting (?:on|for) ([a-z]+)(?: to (?:reply|respond|get back|confirm|send)(?: to me)?)?(?: (?:about|on|re|for|with|to) (.+))?$/);
     if (m && !/^(the|a|an|my|it|that)$/.test(m[1])) return { kind: 'waiting', raw: o, personName: m[1], about: m[2] ?? '', direction: 'them' };
-    m = t.match(/^([a-z]+) is waiting (?:for|on) (?:me|my|an answer from me)(?: (?:to|about|for|on) (.+))?(.*)$/);
+    m = t.match(/^([a-z]+(?: [a-z]+)?) is waiting (?:for|on) (?:me|my|an answer from me)(?: (?:to|about|for|on) (.+))?(.*)$/);
     if (m && !/^(it|that|this|everyone)$/.test(m[1])) return { kind: 'waiting', raw: o, personName: m[1], about: (m[2] ?? m[3] ?? '').replace(/^\s*(answer|reply|response)\b/, 'an answer').trim(), direction: 'me' };
     m = t.match(/^i owe ([a-z]+) (?:an? )?(.+)$/);
     if (m) return { kind: 'waiting', raw: o, personName: m[1], about: m[2], direction: 'me' };

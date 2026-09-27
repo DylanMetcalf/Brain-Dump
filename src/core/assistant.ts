@@ -1197,8 +1197,13 @@ export class Assistant {
       return this.completeCandidate(entityCandidate(this.ctx(t), ref)!, t);
     }
     const query = `${th.verb ?? ''} ${th.phrase}`.trim();
-    const person = th.phrase.split(' ')[0];
-    const contact = this.state.contacts.find((c) => c.name.toLowerCase().split(' ')[0] === person.toLowerCase());
+    const phraseLc = th.phrase.toLowerCase();
+    const contact =
+      this.state.contacts.find((c) => phraseLc.startsWith(c.name.toLowerCase())) ??
+      (() => {
+        const first = this.state.contacts.filter((c) => c.name.toLowerCase().split(' ')[0] === phraseLc.split(' ')[0]);
+        return first.length === 1 ? first[0] : undefined;
+      })();
     const reminders = this.state.reminders
       .filter((r) => r.status === 'open')
       .map((r) => ({ r, s: Math.max(matchScore(query, r.text), matchScore(th.phrase, r.text), contact && r.personId === contact.id ? 0.9 : 0) }))
@@ -1214,7 +1219,7 @@ export class Assistant {
         d.updatedAt = t.now.toISOString();
       }
     }
-    if (contact && /^(replied|messaged|texted|emailed|answered|called|rang|phoned|sent)$/.test(th.verb ?? '')) {
+    if (contact && /^(replied|messaged|texted|emailed|answered|called|rang|phoned|sent)\b/.test(th.verb ?? '')) {
       const w = this.state.waiting.find((x) => x.status === 'waiting' && x.direction === 'me' && x.personId === contact.id);
       if (w) {
         await this.runPlan({ type: 'waiting.resolve', id: w.id }, t, { quiet: did, done: `Great — ${contact.name} is off your list.` });
@@ -1422,7 +1427,14 @@ export class Assistant {
 
   private async onCommunicate(th: Extract<Thought, { kind: 'communicate' }>, t: TurnCtx) {
     const contact = await this.personFor(th.personName && !/^(her|him|them)$/.test(th.personName) ? th.personName : undefined, th, t, { create: true });
-    if (contact === 'asked') return;
+    if (contact === 'asked') {
+      // Never lose the thought while we find out who: keep a follow-up now, attach the person later.
+      if (!th.body && th.personName && !this.state.reminders.some((r) => r.status === 'open' && r.kind === 'message' && !r.personId && matchScore(th.personName!, r.text) >= 0.8)) {
+        const verb = th.verb === 'reply' ? 'Reply to' : th.verb === 'email' ? 'Email' : 'Message';
+        await this.runPlan({ type: 'reminder.create', text: `${verb} ${titleCaseName(th.personName)}`, kind: 'message' }, t, { done: `I'll remind you to ${lcFirst(verb)} ${titleCaseName(th.personName)}.` });
+      }
+      return;
+    }
     if (!contact) {
       this.ask(t, { kind: 'fill_slot', text: 'Who is it for?', optional: true, data: { slot: 'person', intent: { type: 'person_for', thought: th } } });
       return;
@@ -1437,6 +1449,15 @@ export class Assistant {
     const text = `${verb} ${contact.name}`;
     const due = th.when.found ? resolveInstant(th.when, t.now, t.tz, { defaultHour: 18 }) : undefined;
     let reminderId = this.state.reminders.find((r) => r.status === 'open' && r.personId === contact.id && r.kind === 'message')?.id;
+    if (!reminderId) {
+      // A follow-up captured before we knew which person: attach it now.
+      const loose = this.state.reminders.find((r) => r.status === 'open' && r.kind === 'message' && !r.personId && r.text.toLowerCase().includes(contact.name.split(' ')[0].toLowerCase()));
+      if (loose) {
+        loose.personId = contact.id;
+        loose.text = loose.text.replace(new RegExp(`${escapeRe(contact.name.split(' ')[0])}\\b`, 'i'), contact.name);
+        reminderId = loose.id;
+      }
+    }
     if (!reminderId) {
       await this.runPlan({ type: 'reminder.create', text, dueAt: due?.toISOString(), kind: 'message', personId: contact.id }, t, {
         done: due ? `I'll remind you to ${lcFirst(text)} ${formatWhen(due, t.tz, t.now)}.` : th.later ? `I'll remind you to ${lcFirst(text)}.` : undefined,
@@ -2050,10 +2071,10 @@ export class Assistant {
     if (a === 'automate_routine') {
       const r = this.state.routines.find((x) => x.id === q.data.routineId);
       if (!r) return;
-      r.status = 'automated';
+      const status = await this.runPlan({ type: 'routine.update', id: r.id, patch: { status: 'automated' } }, t, { quiet: true });
       const m = r.memoryId ? this.state.memories.find((x) => x.id === r.memoryId) : undefined;
       if (m) m.automationAllowed = true;
-      t.out.lines.push("Done — I'll add it each week. You can turn that off any time.");
+      if (status === 'done') t.out.lines.push("Done — I'll add it each week. You can turn that off any time.");
       return;
     }
     if (a === 'run_setup') {

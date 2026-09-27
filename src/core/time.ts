@@ -663,7 +663,12 @@ export function resolveInstant(
     }
   }
   if (hour === undefined) hour = opts.defaultHour ?? 9;
-  return zonedToUtc({ ...date, hour, minute }, tz);
+  let out = zonedToUtc({ ...date, hour, minute }, tz);
+  // "Thursday at 7am" said on Thursday at 8am means next Thursday.
+  if (p.weekday !== undefined && out.getTime() < now.getTime() && opts.preferFuture !== false && p.date && dateKey(p.date) === dateKey(zonedParts(now, tz))) {
+    out = zonedToUtc({ ...addDays(date, 7), hour, minute }, tz);
+  }
+  return out;
 }
 
 export function weekdayFromText(text: string): number | undefined {

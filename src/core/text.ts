@@ -130,7 +130,7 @@ export function plural(n: number, word: string, pluralWord?: string): string {
 
 /** Strip leading articles/quantifiers from an item: "some milk" → "milk". */
 export function cleanItem(s: string): { name: string; quantity?: number } {
-  let t = lower(s).replace(/[.!?]+$/g, '').trim();
+  let t = lower(s).replace(/[.!?]+$/g, '').replace(/^(?:(?:oh|um+|uh+|so|and|also|plus|then|er+m*)\b\s*)+/, '').trim();
   let quantity: number | undefined;
   const q = t.match(/^(\d+|two|three|four|five|six|seven|eight|nine|ten|a dozen|dozen|a couple of|a pack of|a box of|a bottle of|a bag of|a loaf of|a pint of)\s+(.+)/);
   const nums: Record<string, number> = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, 'a dozen': 12, dozen: 12, 'a couple of': 2 };

@@ -1,3 +1,4 @@
+import type { Channel } from './types.js';
 // Action Engine: plans are plain data (so a confirmation can be answered later, even
 // after a restart). Execution goes through providers, is verified by reading state back,
 // and is recorded in the Action Ledger with enough information to undo it.
@@ -24,7 +25,7 @@ export type ActionPlan =
   | { type: 'calendar.create'; event: NewEvent; summary: string }
   | { type: 'calendar.update'; id: string; patch: Partial<CalendarEvent>; summary: string }
   | { type: 'calendar.cancel'; id: string; summary: string }
-  | { type: 'draft.create'; channel: 'email' | 'message'; to: string; body: string; subject?: string; reminderId?: string; relatedEventId?: string }
+  | { type: 'draft.create'; channel: Channel; to: string; body: string; subject?: string; reminderId?: string; relatedEventId?: string }
   | { type: 'message.send'; draftId: string }
   | { type: 'email.archive'; ids: string[]; label: string }
   | { type: 'email.delete'; ids: string[]; label: string }

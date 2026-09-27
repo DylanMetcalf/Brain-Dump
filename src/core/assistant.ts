@@ -1,3 +1,4 @@
+import type { Channel } from './types.js';
 // The Assistant orchestrator.
 // USER INPUT → INTERPRETATION → CONTEXT RESOLUTION → ACTION PLAN → RISK EVALUATION →
 // PERMISSION CHECK → EXECUTION → VERIFICATION → STATE UPDATE → USER RESPONSE
@@ -14,9 +15,9 @@ import { handledSummary, needsMe, needsMeText, scheduleSummary, weeklyBriefing, 
 import { ActionPlan, ExecResult, Executor, metaFor } from './executor.js';
 import { interpret, isNo, isYes, Thought, toSecondPerson } from './interpret.js';
 import { decide } from './policy.js';
-import { localProviders, Providers } from './providers.js';
+import { handoffLinks, localProviders, musicLinks, Providers } from './providers.js';
 import {
-  Candidate, entityCandidate, isLikelyPersonName, optionLabel, pickOption, resolvePerson, resolveTarget, ResolveContext, titleCaseName,
+  Candidate, entityCandidate, familyAliases, isLikelyPersonName, optionLabel, pickOption, resolvePerson, resolveTarget, ResolveContext, titleCaseName,
   upcomingWindow,
 } from './resolve.js';
 import { grantEverydayPermissions, grantPermission, hasPermission, recordConfirmation, SCOPE_LABELS, setTrust } from './state.js';
@@ -93,7 +94,7 @@ type Intent =
   | { type: 'event'; title: string; date?: { year: number; month: number; day: number } }
   | { type: 'reschedule'; eventId: string }
   | { type: 'event_from_reminder'; title: string; date: { year: number; month: number; day: number }; reminderId: string }
-  | { type: 'communicate'; contactId: string; channel: 'email' | 'message'; reminderId?: string }
+  | { type: 'communicate'; contactId: string; channel: Channel; reminderId?: string }
   | { type: 'booking'; service: string }
   | { type: 'cancel_target' }
   | { type: 'person_for'; thought: Thought };
@@ -208,7 +209,7 @@ export class Assistant {
       assistantName: this.state.profile.assistantName,
       nameAliases: this.state.profile.nameAliases,
     });
-    const thoughts = await this.withClaudeAssist(interp.thoughts, now, session);
+    const thoughts = await this.withClaudeAssist(interp.thoughts, now, session, interp.text);
 
     if (this.state.profile.onboarding === 'name' && !session.pending.some((q) => q.kind === 'onboarding')) {
       if (!thoughts.length || /^(hi|hello|hey|start|begin)\b/i.test(text.trim())) {
@@ -244,31 +245,28 @@ export class Assistant {
    * Thoughts that fell through to a generic note get one chance to be understood by Claude.
    * Claude only rewrites them into plain commands; the normal pipeline decides what happens.
    */
-  private async withClaudeAssist(thoughts: Thought[], now: Date, session: Session): Promise<Thought[]> {
+  private async withClaudeAssist(thoughts: Thought[], now: Date, session: Session, rawText: string): Promise<Thought[]> {
     if (!this.askClaude) return thoughts;
-    // A pending question takes free-form answers (a message body, a name): don't rewrite those.
+    // A pending question takes free-form answers (a message body, a name): keep that answer as-is.
     const answering = this.activeQuestion(session);
-    const out: Thought[] = [];
-    for (const [i, th] of thoughts.entries()) {
-      const unclear = th.kind === 'note' && !th.idea && !(i === 0 && answering);
-      if (!unclear) {
-        out.push(th);
-        continue;
-      }
-      try {
-        const rewritten = parseRewrite(await this.askClaude(buildRewritePrompt(th.raw, this.state, now)));
-        const opts = { now, timeZone: this.tz, assistantName: this.state.profile.assistantName };
-        const understood = rewritten.flatMap((r) => interpret(r, opts).thoughts);
-        if (!rewritten.length && /\?$/.test(th.raw)) {
-          out.push(th); // a question: the note handler answers it politely
-        } else if (understood.length) {
-          out.push(...understood);
-        } else out.push(th);
-      } catch {
-        out.push(th); // Claude unavailable: never lose the thought
-      }
+    const unclear = thoughts.some((th, i) => th.kind === 'note' && !th.idea && !th.explicit && !(i === 0 && answering));
+    // Long run-on brain dumps get Claude's reading even when the rules produced something.
+    const long = rawText.split(/\s+/).length > 35 && thoughts.length >= 3;
+    if (!unclear && !long) return thoughts;
+    const keep = answering && thoughts.length ? [thoughts[0]] : [];
+    const text = answering ? thoughts.slice(1).map((t) => t.raw).join('. ') : rawText;
+    if (!text.trim()) return thoughts;
+    try {
+      const r = parseRewrite(await this.askClaude(buildRewritePrompt(text, this.state, now, session.turns.slice(-7, -1))));
+      const opts = { now, timeZone: this.tz, assistantName: this.state.profile.assistantName };
+      const understood = r.commands.flatMap((c) => interpret(c, opts).thoughts);
+      if (!understood.length && !r.reply) return thoughts;
+      const out: Thought[] = [...keep, ...understood];
+      if (r.reply) out.push({ kind: 'say', raw: r.reply, text: r.reply });
+      return out;
+    } catch {
+      return thoughts; // Claude unavailable: never lose the thought
     }
-    return out;
   }
 
   private async turn(session: Session, now: Date): Promise<TurnCtx> {
@@ -559,6 +557,17 @@ export class Assistant {
       await this.handleThought({ kind: 'cancel', raw, phrase, when: parseWhen(phrase, t.now, t.tz) }, t);
       return true;
     }
+    if (slot === 'phone' && (intent as any).type === 'call') {
+      const digits = raw.replace(/[^\d+]/g, '');
+      if (digits.replace(/\D/g, '').length < 6) return false;
+      this.removeQuestion(t.session, q);
+      const c = this.state.contacts.find((x) => x.id === (intent as any).contactId);
+      if (!c) return true;
+      await this.runPlan({ type: 'contact.upsert', id: c.id, name: c.name, patch: { phone: digits } }, t, { quiet: true });
+      t.out.lines.push(`Saved ${c.name}'s number.`);
+      this.pushCallLinks(c, !!(intent as any).video, t);
+      return true;
+    }
     if (slot === 'booking_slot') {
       const slots = q.data.slots as { id: string; start: string; end: string; label: string }[];
       const when = parseWhen(raw, t.now, t.tz, { answerMode: true });
@@ -838,6 +847,19 @@ export class Assistant {
         return;
       case 'note':
         return this.onNote(th, t);
+      case 'call':
+        return this.onCall(th, t);
+      case 'timer':
+        return this.onTimer(th, t);
+      case 'alarm':
+        return this.onAlarm(th, t);
+      case 'music':
+        return this.onMusic(th, t);
+      case 'check_email':
+        return this.onCheckEmail(th, t);
+      case 'say':
+        t.out.lines.push(th.text);
+        return;
     }
   }
 
@@ -1433,7 +1455,8 @@ export class Assistant {
   // ---- people & communication ----------------------------------------------------------
 
   private async createContact(name: string, t: TurnCtx, patch: Partial<Contact> = {}): Promise<string> {
-    const res = await this.exec.execute({ type: 'contact.upsert', name: titleCaseName(name), patch }, { auto: true, risk: 'low', sessionId: t.session.id });
+    const aliases = familyAliases(name);
+    const res = await this.exec.execute({ type: 'contact.upsert', name: titleCaseName(name), patch: { ...(aliases.length ? { aliases, relationship: 'family' } : {}), ...patch } }, { auto: true, risk: 'low', sessionId: t.session.id });
     const c = res.data?.contact as Contact;
     this.focus(t, { kind: 'contact', id: c.id });
     return c.id;
@@ -1509,14 +1532,14 @@ export class Assistant {
     });
   }
 
-  private inferChannel(c: Contact, t: TurnCtx): 'email' | 'message' {
+  private inferChannel(c: Contact, t: TurnCtx): Channel {
     const recentEmail = this.state.mailbox.some((m) => (c.email && m.from.toLowerCase() === c.email.toLowerCase()) && Date.parse(m.receivedAt) > t.now.getTime() - 14 * 86400000);
     if (recentEmail) return 'email';
     if (c.email && !c.phone) return 'email';
     return 'message';
   }
 
-  private async draftMessage(contactId: string, channel: 'email' | 'message', body: string, t: TurnCtx, reminderId?: string) {
+  private async draftMessage(contactId: string, channel: Channel, body: string, t: TurnCtx, reminderId?: string) {
     const c = this.state.contacts.find((x) => x.id === contactId)!;
     this.focus(t, { kind: 'contact', id: contactId });
     const status = await this.runPlan({ type: 'draft.create', channel, to: contactId, body, reminderId, subject: channel === 'email' ? `Re: ${this.lastSubjectFrom(c) ?? 'our conversation'}` : undefined }, t, { quiet: true });
@@ -1533,8 +1556,14 @@ export class Assistant {
       }
       return;
     }
-    t.out.lines.push(`Got it. I've drafted that${d.handoffUrl ? ' — tap to send it' : ''}.`);
-    if (d.handoffUrl) t.out.links.push({ label: `Send to ${c.name}${channel === 'message' ? ' (WhatsApp)' : ' (email)'}`, url: d.handoffUrl });
+    const links = handoffLinks(d, c);
+    const where = channel === 'whatsapp' ? 'WhatsApp' : channel === 'sms' ? 'Messages' : channel === 'email' ? 'Mail' : 'WhatsApp or Messages';
+    t.out.lines.push(`Got it. I've written it — tap to send it in ${where}.`);
+    t.out.links.push(...links);
+    const missing = channel === 'email' ? !c.email : !c.phone;
+    if (missing && !t.session.turns.some((x) => x.role === 'assistant' && x.text.includes(`${c.name}'s ${channel === 'email' ? 'email' : 'number'}`))) {
+      t.out.lines.push(`Tell me ${c.name}'s ${channel === 'email' ? 'email address' : 'number'} and next time it'll go straight to them.`);
+    }
   }
 
   private lastSubjectFrom(c: Contact): string | undefined {
@@ -2336,7 +2365,7 @@ export class Assistant {
 
   private async onNote(th: Extract<Thought, { kind: 'note' }>, t: TurnCtx) {
     const text = th.text.trim();
-    if (/\?$/.test(th.raw) || /^(?:what|why|how|when|where|who|which|is|are|do|does|can|could|will|would)\b/i.test(text)) {
+    if (!th.explicit && (/\?$/.test(th.raw) || /^(?:what|why|how|when|where|who|which|is|are|do|does|can|could|will|would)\b/i.test(text))) {
       t.out.lines.push("I'm not sure about that one — I'm best with things you need to remember, sort or do.");
       return;
     }
@@ -2344,7 +2373,120 @@ export class Assistant {
       t.out.lines.push("Sorry, I didn't catch that.");
       return;
     }
-    await this.runPlan({ type: 'note.create', text, idea: th.idea }, t, { done: th.idea ? 'Saved that idea.' : "Saved — I've noted that." });
+    await this.runPlan({ type: 'note.create', text, idea: th.idea }, t, { done: th.idea ? 'Saved that idea.' : th.explicit ? 'Saved to your notes.' : "Saved — I've noted that." });
+  }
+
+  // ---- phone actions ---------------------------------------------------------------
+
+  private async onCall(th: Extract<Thought, { kind: 'call' }>, t: TurnCtx) {
+    let c = await this.personFor(th.personName, th, t, { create: true });
+    if (c === 'asked') return;
+    if (!c) {
+      // A business ("the dentist"): keep it as a contact so its number can be remembered.
+      const name = titleCaseName(th.personName.replace(/^(?:the|my|our)\s+/i, ''));
+      const existing = this.state.contacts.find((x) => x.name.toLowerCase() === name.toLowerCase());
+      c = existing;
+      if (!c) {
+        const id = await this.createContact(name, t);
+        c = this.state.contacts.find((x) => x.id === id);
+      }
+    }
+    if (!c) return;
+    this.focus(t, { kind: 'contact', id: c.id });
+    if (!c.phone) {
+      this.ask(t, {
+        kind: 'fill_slot',
+        text: `What's ${c.name}'s number? I'll remember it.`,
+        optional: true,
+        data: { slot: 'phone', intent: { type: 'call', contactId: c.id, video: th.video } },
+      });
+      return;
+    }
+    this.pushCallLinks(c, th.video, t);
+  }
+
+  private pushCallLinks(c: Contact, video: boolean, t: TurnCtx) {
+    const phone = (c.phone ?? '').replace(/[^\d+]/g, '');
+    t.out.lines.push(`Tap to ${video ? 'FaceTime' : 'call'} ${c.name}.`);
+    t.out.links.push(video ? { label: `FaceTime ${c.name}`, url: `facetime:${phone}` } : { label: `Call ${c.name}`, url: `tel:${phone}` });
+    if (!video) t.out.links.push({ label: `WhatsApp ${c.name.split(' ')[0]}`, url: `https://wa.me/${phone.replace(/^\+/, '')}` });
+  }
+
+  private async onTimer(th: Extract<Thought, { kind: 'timer' }>, t: TurnCtx) {
+    const due = new Date(t.now.getTime() + th.ms);
+    await this.runPlan({ type: 'reminder.create', text: `Time's up (${th.label} timer)`, dueAt: due.toISOString(), kind: 'timer' }, t, {
+      done: `Timer set for ${th.label} — I'll let you know at ${formatClock(due, t.tz)}.`,
+    });
+  }
+
+  private async onAlarm(th: Extract<Thought, { kind: 'alarm' }>, t: TurnCtx) {
+    // Alarms are for mornings: a bare "6:30" means 6:30 AM, unless they said evening/PM.
+    const when = th.when.time?.ambiguous && th.when.time.hour12 !== undefined && !th.when.part
+      ? { ...th.when, time: { ...th.when.time, hour: th.when.time.hour12 % 12, ambiguous: false } }
+      : th.when;
+    const at = resolveInstant(when, t.now, t.tz);
+    if (!at) {
+      t.out.lines.push('What time should it go off?');
+      return;
+    }
+    await this.runPlan({ type: 'reminder.create', text: `Alarm (${formatClock(at, t.tz)})`, dueAt: at.toISOString(), kind: 'alarm' }, t, {
+      done: `Done — I'll notify you ${formatWhen(at, t.tz, t.now)}. It's a notification, not a ringing alarm; for one that rings through silent mode, set it in the Clock app.`,
+    });
+  }
+
+  private onMusic(th: Extract<Thought, { kind: 'music' }>, t: TurnCtx) {
+    let service = th.service;
+    const pref = this.state.memories.find((m) => m.subject === 'music app');
+    if (service) {
+      const value = /spotify/.test(service) ? 'Spotify' : /apple/.test(service) ? 'Apple Music' : 'YouTube Music';
+      if (pref) pref.value = value;
+      else {
+        this.state.memories.push({
+          id: this.ids('mem'), kind: 'preference', subject: 'music app', value, provenance: 'observed', source: 'conversation', confidence: 0.8,
+          learnedAt: t.now.toISOString(), observationCount: 1, lastObservedAt: t.now.toISOString(), confirmed: false, automationAllowed: false,
+        });
+      }
+    } else if (pref) service = pref.value.toLowerCase();
+    const query = th.query === 'music' ? 'chill' : th.query;
+    t.out.lines.push(`Here's ${query} — tap to play.`);
+    t.out.links.push(...musicLinks(query, service));
+  }
+
+  private async onCheckEmail(th: Extract<Thought, { kind: 'check_email' }>, t: TurnCtx) {
+    const email = this.providers.email;
+    if (!email || (email.id === 'local-mail' && !this.state.mailbox.length)) {
+      t.out.lines.push("I can't see your email yet. Connect Gmail in Settings → Connected services and I'll check it for you whenever you ask.");
+      return;
+    }
+    let fromQuery: string | undefined;
+    let who: string | undefined;
+    if (th.from) {
+      const pr = resolvePerson(this.state, t.session, th.from);
+      const c = pr.status === 'found' ? pr.contact : undefined;
+      fromQuery = c?.email ?? th.from;
+      who = c?.name ?? titleCaseName(th.from);
+    }
+    const since = new Date(t.now.getTime() - (fromQuery ? 14 : 2) * 86400000);
+    let msgs: Awaited<ReturnType<typeof email.search>>;
+    try {
+      msgs = await email.search({ from: fromQuery, since, limit: 25 });
+    } catch {
+      t.out.lines.push("I couldn't reach your email just now. I'll try again when you ask.");
+      return;
+    }
+    const inbox = msgs.filter((m) => m.labels.includes('INBOX') || !m.labels.length);
+    if (who) {
+      const last = inbox[inbox.length - 1];
+      t.out.lines.push(last ? `Yes — ${who} emailed ${formatDay(new Date(last.receivedAt), t.tz, t.now)}: “${last.subject}”.` : `Nothing from ${who} in the last two weeks.`);
+      return;
+    }
+    const unread = inbox.filter((m) => m.unread);
+    if (!unread.length) {
+      t.out.lines.push('No new emails in the last couple of days.');
+      return;
+    }
+    const latest = unread.slice(-3).reverse().map((m) => `“${m.subject}” from ${m.fromName ?? m.from}`);
+    t.out.lines.push(`You've got ${unread.length} unread email${unread.length === 1 ? '' : 's'}. Latest: ${listJoin(latest)}.`);
   }
 
   // ---- helpers -------------------------------------------------------------------

@@ -216,17 +216,44 @@ export class HandoffMessaging implements MessagingProvider {
   readonly label = 'your messaging app';
   readonly capabilities = { write: true, send: false };
   handoffUrl(draft: Draft, to: Contact): string | undefined {
-    const text = encodeURIComponent(draft.body);
-    if (draft.channel === 'email') {
-      const subject = encodeURIComponent(draft.subject ?? '');
-      return `mailto:${to.email ?? ''}?subject=${subject}&body=${text}`;
-    }
-    const phone = (to.phone ?? '').replace(/[^\d+]/g, '').replace(/^\+/, '');
-    return phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`;
+    return handoffLinks(draft, to)[0]?.url;
   }
   async send(): Promise<{ id: string }> {
     throw new Error('Direct sending is not connected; the message was prepared for you instead.');
   }
+}
+
+/** Official deep links that open the user's own app with the message ready to send. */
+export function handoffLinks(draft: Pick<Draft, 'channel' | 'body' | 'subject'>, to: Pick<Contact, 'name' | 'phone' | 'email'>): { label: string; url: string }[] {
+  const text = encodeURIComponent(draft.body);
+  const phone = (to.phone ?? '').replace(/[^\d+]/g, '');
+  const first = to.name.split(' ')[0];
+  const whatsapp = { label: `Send to ${first} on WhatsApp`, url: phone ? `https://wa.me/${phone.replace(/^\+/, '')}?text=${text}` : `https://wa.me/?text=${text}` };
+  // iOS Messages: sms:<number>&body=… (the & form is what iOS expects).
+  const sms = { label: `Send to ${first} in Messages`, url: `sms:${phone}&body=${text}` };
+  const mail = { label: `Open email to ${first}`, url: `mailto:${to.email ?? ''}?subject=${encodeURIComponent(draft.subject ?? '')}&body=${text}` };
+  switch (draft.channel) {
+    case 'email':
+      return [mail];
+    case 'whatsapp':
+      return [whatsapp];
+    case 'sms':
+      return [sms];
+    default:
+      return [whatsapp, sms];
+  }
+}
+
+/** Music: universal links open Spotify / Apple Music at a search for what was asked. */
+export function musicLinks(query: string, service?: string): { label: string; url: string }[] {
+  const q = encodeURIComponent(query);
+  const spotify = { label: 'Play in Spotify', url: `https://open.spotify.com/search/${q}` };
+  const apple = { label: 'Play in Apple Music', url: `https://music.apple.com/search?term=${q}` };
+  const youtube = { label: 'Play in YouTube Music', url: `https://music.youtube.com/search?q=${q}` };
+  if (service && /spotify/.test(service)) return [spotify];
+  if (service && /apple/.test(service)) return [apple];
+  if (service && /youtube/.test(service)) return [youtube];
+  return [spotify, apple];
 }
 
 /** Uses the user's own personal meeting link (e.g. Zoom personal room) when no meeting API is connected. */

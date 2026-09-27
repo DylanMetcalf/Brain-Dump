@@ -3,6 +3,7 @@
 // focus and authorised state. Returns found / ambiguous / none — never guesses wildly.
 
 import { contentTokens, matchScore } from './text.js';
+import { normalizePersonName } from './interpret.js';
 import { formatClockShort, formatDay, localDateKey, ParsedWhen, zonedParts, dateKey, addDays } from './time.js';
 import type { CalendarEvent, Contact, EntityKind, Ref, Reminder, Session, ShoppingItem, UserState } from './types.js';
 
@@ -255,14 +256,28 @@ export type PersonResolution =
 
 const PRONOUNS = /^(her|him|them|she|he|they)$/;
 
+/** Family words that mean the same person: "Mum" and "Mom" and "mother". */
+export const FAMILY_GROUPS = [
+  ['mum', 'mom', 'mam', 'mother', 'ma', 'mummy', 'mommy'],
+  ['dad', 'father', 'papa', 'daddy', 'pa'],
+  ['nan', 'nana', 'gran', 'granny', 'grandma', 'grandmother'],
+  ['grandad', 'grandpa', 'granddad', 'grandfather'],
+];
+
+export function familyAliases(name: string): string[] {
+  const g = FAMILY_GROUPS.find((x) => x.includes(name.toLowerCase()));
+  return g ? g.filter((x) => x !== name.toLowerCase()) : [];
+}
+
 export function resolvePerson(state: UserState, session: Session | undefined, name: string): PersonResolution {
-  const n = name.trim().toLowerCase().replace(/[.,!?]$/, '');
+  const n = normalizePersonName(name.trim().replace(/[.,!?]$/, '')).toLowerCase();
   if (PRONOUNS.test(n)) {
     const c = session?.lastPersonId ? state.contacts.find((x) => x.id === session.lastPersonId) : undefined;
     if (c) return { status: 'found', contact: c };
     return { status: 'new', name: '' };
   }
-  const full = state.contacts.filter((c) => c.name.toLowerCase() === n || c.aliases.some((a) => a.toLowerCase() === n));
+  const family = familyAliases(n);
+  const full = state.contacts.filter((c) => c.name.toLowerCase() === n || c.aliases.some((a) => a.toLowerCase() === n) || family.includes(c.name.toLowerCase()));
   if (full.length === 1) return { status: 'found', contact: full[0] };
   const first = full.length ? full : state.contacts.filter((c) => c.name.toLowerCase().split(' ')[0] === n.split(' ')[0]);
   if (first.length === 1) return { status: 'found', contact: first[0] };
@@ -283,7 +298,7 @@ export function resolvePerson(state: UserState, session: Session | undefined, na
     if (ranked[0].n >= 3 && ranked[1].n === 0) return { status: 'found', contact: ranked[0].c };
     return { status: 'ambiguous', contacts: first };
   }
-  return { status: 'new', name: name.trim() };
+  return { status: 'new', name: normalizePersonName(name.trim()) };
 }
 
 export function titleCaseName(name: string): string {
@@ -295,7 +310,7 @@ export function titleCaseName(name: string): string {
 
 /** Words that look like a person but are not ("the dentist", "mum" is a person though). */
 export function isLikelyPersonName(name: string): boolean {
-  const n = name.trim().toLowerCase();
+  const n = normalizePersonName(name).trim().toLowerCase();
   if (!n) return false;
   if (/^(the|my|a|an|our|your)\b/.test(n)) return false;
   if (/\b(dentist|doctor|gp|office|bank|school|council|landlord|plumber|garage|shop|company|insurance|vet|clinic|hospital|surgery|salon|gym)\b/.test(n)) return false;

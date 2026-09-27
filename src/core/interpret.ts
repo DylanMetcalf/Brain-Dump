@@ -1,3 +1,4 @@
+import type { Channel } from './types.js';
 // The Brain Dump interpreter: turns messy human language into structured thoughts.
 // Deterministic and explainable; the user never has to pick a category.
 
@@ -19,7 +20,7 @@ export type Thought =
   | { kind: 'event_add'; raw: string; title: string; when: ParsedWhen; explicitCalendar: boolean }
   | { kind: 'reminder'; raw: string; text: string; when: ParsedWhen; reminderKind: 'task' | 'call' | 'message' | 'follow_up'; personName?: string }
   | { kind: 'recall'; raw: string; phrase: string; when: ParsedWhen; forgot: boolean }
-  | { kind: 'communicate'; raw: string; personName?: string; channel?: 'email' | 'message'; body?: string; later: boolean; when: ParsedWhen; verb: string }
+  | { kind: 'communicate'; raw: string; personName?: string; channel?: Channel; body?: string; later: boolean; when: ParsedWhen; verb: string }
   | { kind: 'meeting'; raw: string; people: string[]; provider?: string; when: ParsedWhen }
   | { kind: 'booking'; raw: string; service: string; when: ParsedWhen }
   | { kind: 'purchase'; raw: string; item: string }
@@ -37,7 +38,14 @@ export type Thought =
   | { kind: 'trust'; raw: string; grant: boolean }
   | { kind: 'email_clear'; raw: string; query: string; permanent: boolean }
   | { kind: 'meeting_link'; raw: string; provider: 'zoom' | 'meet' | 'teams' | 'other'; url: string }
-  | { kind: 'note'; raw: string; text: string; idea: boolean }
+  | { kind: 'note'; raw: string; text: string; idea: boolean; explicit?: boolean }
+  | { kind: 'call'; raw: string; personName: string; video: boolean }
+  | { kind: 'timer'; raw: string; ms: number; label: string }
+  | { kind: 'alarm'; raw: string; when: ParsedWhen }
+  | { kind: 'music'; raw: string; query: string; service?: string }
+  | { kind: 'check_email'; raw: string; from?: string }
+  /** A direct answer (from Claude) to a question that isn't a task. */
+  | { kind: 'say'; raw: string; text: string }
   | { kind: 'filler'; raw: string };
 
 export type QueryTopic =
@@ -233,10 +241,63 @@ const PERSON_WORD = "([a-z][a-z'\\-]*(?: [a-z][a-z'\\-]*)?)";
 
 /** Remove trailing time words from a person name capture: "sarah tomorrow" → "sarah". */
 function cleanPerson(name: string): string {
-  return name
-    .replace(/\b(today|tomorrow|tonight|later|now|soon|back|about|re|regarding|on|at|that|and|to|asap|first thing|this|next|please|again|the|a|an|for|by)\b.*$/, '')
+  const stripped = name
+    .replace(/^(?:my|our)\s+/, '')
+    .replace(/\b(today|tomorrow|tonight|later|now|soon|back|about|re|regarding|on|at|that|and|to|asap|first thing|this|next|please|again|the|a|an|for|by|saying|telling|asking|says)\b.*$/, '')
     .replace(/'s$/, '')
     .trim();
+  return normalizePersonName(stripped);
+}
+
+const FAMILY: Record<string, string> = {
+  mom: 'Mom', mum: 'Mum', mommy: 'Mom', mummy: 'Mum', mother: 'Mum', ma: 'Mum', mam: 'Mam',
+  dad: 'Dad', daddy: 'Dad', father: 'Dad', pa: 'Dad', papa: 'Papa',
+  nan: 'Nan', nana: 'Nana', gran: 'Gran', granny: 'Granny', grandma: 'Grandma', grandpa: 'Grandpa', grandad: 'Grandad', granddad: 'Grandad',
+  sister: 'Sister', sis: 'Sister', brother: 'Brother', bro: 'Brother', wife: 'Wife', husband: 'Husband', partner: 'Partner',
+  boyfriend: 'Boyfriend', girlfriend: 'Girlfriend', auntie: 'Auntie', aunt: 'Auntie', uncle: 'Uncle', son: 'Son', daughter: 'Daughter',
+};
+
+/** "my mom" → "Mom", "mother" → "Mum"; other names are returned unchanged. */
+export function normalizePersonName(name: string): string {
+  const n = name.trim().replace(/^(?:my|our)\s+/i, '');
+  return FAMILY[n.toLowerCase()] ?? n;
+}
+
+export function isFamilyWord(name: string): boolean {
+  return !!FAMILY[name.trim().replace(/^(?:my|our)\s+/i, '').toLowerCase()];
+}
+
+function channelFor(word: string): Channel {
+  if (/mail/.test(word)) return 'email';
+  if (/whats ?app/.test(word)) return 'whatsapp';
+  if (/text|sms|imessage/.test(word)) return 'sms';
+  return 'message';
+}
+
+/** "10 minutes", "an hour and a half", "1h30", "90 seconds" → milliseconds. */
+export function parseDuration(text: string): number | undefined {
+  const t = text.toLowerCase().replace(/-/g, ' ');
+  let ms = 0;
+  let found = false;
+  const re = /(\d+(?:\.\d+)?|an?|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|forty five|sixty|ninety|half an?)\s*(hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)\b/g;
+  const words: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, fifteen: 15, twenty: 20, thirty: 30, forty: 40, 'forty five': 45, sixty: 60, ninety: 90, 'half a': 0.5, 'half an': 0.5 };
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(t))) {
+    const n = /^\d/.test(m[1]) ? Number(m[1]) : words[m[1]] ?? 1;
+    const unit = m[2][0];
+    ms += n * (unit === 'h' ? 3600000 : unit === 'm' ? 60000 : 1000);
+    found = true;
+  }
+  if (/\band a half\b/.test(t) && found) ms += /hour/.test(t) ? 1800000 : 30000;
+  if (/^half an hour$/.test(t.trim())) return 1800000;
+  return found && ms > 0 ? ms : undefined;
+}
+
+function durationLabel(ms: number): string {
+  const h = Math.floor(ms / 3600000);
+  const m = Math.round((ms % 3600000) / 60000);
+  const parts = [h ? `${h} hour${h > 1 ? 's' : ''}` : '', m ? `${m} minute${m > 1 ? 's' : ''}` : ''].filter(Boolean);
+  return parts.join(' ') || `${Math.round(ms / 1000)} seconds`;
 }
 
 function pronounOrName(s: string): string {
@@ -396,6 +457,89 @@ const MATCHERS: Matcher[] = [
     return undefined;
   },
 
+  // "Send a WhatsApp to my mum saying I'll be late" / "Send mum a text saying…"
+  (t, o) => {
+    const s = t.replace(/^(?:can you |could you |please |i need to |i want to |i'd like to |just )+/, '');
+    let m = s.match(/^(?:send|write|drop|shoot|fire off)(?: a| an)? (whats ?app|text|imessage|message|sms|email|e-mail|mail|note)(?: message)? to (.+?)(?:(?: and)?(?: saying| that says| to say| telling (?:her|him|them)| asking (?:her|him|them)| that|:|,) ?(.+))?$/);
+    let person: string | undefined;
+    let word = '';
+    let body: string | undefined;
+    if (m) {
+      word = m[1];
+      person = m[2];
+      body = m[3];
+    } else {
+      m = s.match(/^(?:send|text|whatsapp|message|email) (.+?) (?:a |an )(whats ?app|text|message|email|note)(?: message)?(?:(?: saying| that says| to say| telling (?:her|him|them)| that|:|,) ?(.+))?$/);
+      if (m) {
+        person = m[1];
+        word = m[2];
+        body = m[3];
+      }
+    }
+    if (!person) return undefined;
+    const name = cleanPerson(person);
+    if (!name || /^(me|myself|it|that)$/.test(name.toLowerCase())) return undefined;
+    return { kind: 'communicate', raw: o, personName: name, channel: channelFor(word), body: body ? toSecondPerson(body) : undefined, later: false, when: w('', { now: new Date(0), timeZone: 'UTC' }), verb: word.includes('mail') ? 'email' : 'message' };
+  },
+
+  // Calls (right now): "call mum", "facetime dad", "give Rick a ring"
+  (t, o) => {
+    const m = t.match(/^(?:can you |could you |please )?(?:(call|ring|phone|facetime|video call)(?: up)? (.+?)|give (.+?) a (?:call|ring|bell|facetime))(?: now| back)?$/);
+    if (!m) return undefined;
+    const target = (m[2] ?? m[3] ?? '').trim();
+    if (!target || parseWhen(target, new Date(0), 'UTC').found) return undefined; // "call mum tomorrow" is a reminder
+    if (/^(?:it|that|this|off|him|her|them)$/.test(target)) return undefined;
+    return { kind: 'call', raw: o, personName: cleanPerson(target) || target, video: /facetime|video/.test(m[1] ?? t) };
+  },
+
+  // Timers: "set a timer for 10 minutes", "20 minute timer"
+  (t, o) => {
+    const m =
+      t.match(/^(?:can you |please )?(?:set|start|put on|make)(?: me)?(?: a| an)? timer(?: for| of| on)? (.+)$/) ??
+      t.match(/^(?:can you |please )?(?:set|start|put on|make)(?: me)?(?: a| an)? (.+?) timer$/) ??
+      t.match(/^timer(?: for)? (.+)$/) ??
+      t.match(/^(.+?) timer(?: please)?$/);
+    if (!m) return undefined;
+    const ms = parseDuration(m[1]);
+    if (!ms) return undefined;
+    return { kind: 'timer', raw: o, ms, label: durationLabel(ms) };
+  },
+
+  // Alarms: "set an alarm for 7am", "wake me up at 6:30"
+  (t, o) => {
+    const m = t.match(/^(?:can you |please )?(?:set|put|make)(?: me)?(?: an| my| the)? alarm(?: for| at| on)? (.+)$/) ?? t.match(/^(?:please )?wake me(?: up)?(?: at| by| for)? (.+)$/);
+    if (!m) return undefined;
+    const when = w(m[1], { now: new Date(0), timeZone: 'UTC' }, { answerMode: true });
+    if (!when.time) return undefined;
+    return { kind: 'alarm', raw: o, when };
+  },
+
+  // Music: "play some jazz", "put on Taylor Swift on Spotify", "I want to listen to Adele"
+  (t, o) => {
+    const m = t.match(/^(?:can you |could you |please )?(?:play|put on|start playing|shuffle|i want to listen to|i wanna listen to|let'?s listen to|listen to)(?: me)?(?: some| a bit of| my)? (.+?)(?: on (spotify|apple music|youtube music|youtube))?(?: please)?$/);
+    if (!m) return undefined;
+    if (parseWhen(m[1], new Date(0), 'UTC').found) return undefined; // "play tennis on Saturday at 10" is an event
+    if (/\b(list|calendar|diary|reminder)\b/.test(m[1])) return undefined;
+    return { kind: 'music', raw: o, query: m[1].replace(/^(?:some|the)\s+/, ''), service: m[2] };
+  },
+
+  // Email check: "check my emails", "any new emails?", "did I get an email from Rick?"
+  (t, o) => {
+    if (/^(?:can you |please )?(?:check|read|go through|open|look at|scan|what'?s in)(?: my)? (?:e-?mails?|inbox|mail)(?: for me)?$/.test(t) || /^(?:do i have |have i got |are there |any )(?:any )?(?:new |unread )?(?:e-?mails?|mail)/.test(t) || /^what(?:'s| is) in my inbox/.test(t)) {
+      return { kind: 'check_email', raw: o };
+    }
+    const m = t.match(/^(?:did i get|have i got|is there|any)(?: an| any)? (?:e-?mails?|mail) from (.+?)$/);
+    if (m) return { kind: 'check_email', raw: o, from: cleanPerson(m[1]) };
+    return undefined;
+  },
+
+  // Notes: "make a note that…", "take a note: …", "new note …"
+  (t, o) => {
+    const m = o.match(/^(?:can you |please )?(?:make|take|add|save|create|write)(?: a| me a)? (?:new |quick )?note(?: that| of| to say| saying| about)?[:,-]?\s+(.+)$/i) ?? o.match(/^(?:new note|note that|note down)[:,-]?\s+(.+)$/i);
+    if (m) return { kind: 'note', raw: o, text: capitalizeFirst(m[1].trim()), idea: false, explicit: true } as Thought;
+    return undefined;
+  },
+
   // Shopping: got / bought (existing state)
   (t, o) => {
     const m = t.match(/^(?:i(?:'ve| have)?|we(?:'ve| have)?)? ?(?:just |already )?(?:got|bought|picked up|grabbed|found|have got)(?: the| some| a| an)? (.+?)(?: already| now| earlier| today| yesterday)?$/);
@@ -545,10 +689,10 @@ const MATCHERS: Matcher[] = [
       const person = cleanPerson(m[1]);
       return { kind: 'communicate', raw: o, personName: person, body: m[3] ? toSecondPerson(m[3]) : undefined, later: later && !m[3], when: w(t, { now: new Date(0), timeZone: 'UTC' }), verb: 'reply' };
     }
-    m = s.match(new RegExp(`^(email|e-mail|message|text|whatsapp|msg|ping|dm|write to|drop) (?:a (?:line|note|message) to )?${PERSON_WORD}(?:(?: and)?(?: (?:tell|say|ask|let) (?:her|him|them)(?: know)?)?(?: that| to say| saying|:|,)? (.+))?$`));
+    m = s.match(new RegExp(`^(email|e-mail|message|text|whatsapp|whats app|imessage|msg|ping|dm|write to|drop) (?:a (?:line|note|message) to )?(?:my )?${PERSON_WORD}(?:(?: and)?(?: (?:tell|say|ask|let) (?:her|him|them)(?: know)?)?(?: that| to say| saying|:|,)? (.+))?$`));
     if (m && !/^(me|it|that|this|back)$/.test(m[2])) {
       const person = cleanPerson(m[2]);
-      const channel = /mail/.test(m[1]) ? 'email' : 'message';
+      const channel = channelFor(m[1]);
       const whenP = w(t, { now: new Date(0), timeZone: 'UTC' });
       let body: string | undefined = m[3];
       if (body && whenP.found && /^(?:later|tonight|tomorrow|today)$/.test(body.trim())) body = undefined;

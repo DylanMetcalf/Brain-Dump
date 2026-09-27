@@ -71,7 +71,7 @@ export interface CalendarEvent {
   updatedAt: ISODate;
 }
 
-export type ReminderKind = 'task' | 'call' | 'message' | 'follow_up' | 'booking';
+export type ReminderKind = 'task' | 'call' | 'message' | 'follow_up' | 'booking' | 'timer' | 'alarm';
 
 export interface Reminder {
   id: ID;
@@ -102,7 +102,8 @@ export interface Note {
   createdAt: ISODate;
 }
 
-export type Channel = 'email' | 'message';
+/** message = unspecified (offer WhatsApp and Messages), sms = iMessage/text. */
+export type Channel = 'email' | 'message' | 'whatsapp' | 'sms';
 
 export interface Draft {
   id: ID;

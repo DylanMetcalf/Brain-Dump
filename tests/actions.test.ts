@@ -135,8 +135,8 @@ describe('risk-based confirmation', () => {
     const h = setup();
     h.contact('Rick', { phone: '+44 7700 900123' });
     const r = await h.say('Message Rick saying see you at 6');
-    expect(r.text).toMatch(/drafted/);
-    expect(r.text).not.toMatch(/sent/i);
+    expect(r.text).toMatch(/I've written it — tap to send it/);
+    expect(r.text).not.toMatch(/\bsent\b/i);
     expect(r.links[0].url).toBe('https://wa.me/447700900123?text=See%20you%20at%206.');
     const r2 = await h.say('Send it');
     expect(r2.text).toMatch(/can't send messages directly/);

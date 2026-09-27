@@ -45,7 +45,7 @@ export async function tick(a: Assistant, now: Date): Promise<TickResult> {
     changed = true;
     notify(state, a, {
       at: now.toISOString(), kind: 'reminder', key: `rem:${r.id}:${r.dueAt}`, text: r.text,
-      actions: [
+      actions: r.kind === 'timer' || r.kind === 'alarm' ? [{ label: 'OK', value: 'done' }] : [
         { label: 'Done', value: 'done' },
         { label: 'In an hour', value: 'snooze' },
       ],

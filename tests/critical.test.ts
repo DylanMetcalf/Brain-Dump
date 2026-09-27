@@ -109,7 +109,7 @@ describe('CRITICAL 4 — continuous session across app switches', () => {
     expect((await h.say('I need to buy face masks.')).text).toMatch(/Added face masks/);
     expect((await h.say('Oh, and I need to reply to Sarah.')).question?.text).toMatch(/What do you want to say/);
     const r = await h.say("Just tell her I'll get back to her tonight.");
-    expect(r.text).toMatch(/drafted that/);
+    expect(r.text).toMatch(/I've written it/);
     const d = h.state.drafts[0];
     expect(d.body).toBe("I'll get back to you tonight.");
     expect(r.links[0].url).toMatch(/^https:\/\/wa\.me\//);

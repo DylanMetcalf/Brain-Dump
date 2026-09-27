@@ -47,7 +47,28 @@ describe('Claude assist', () => {
     expect(h.state.notes).toHaveLength(1);
   });
   it('parses tolerant JSON replies', () => {
-    expect(parseRewrite('Sure:\n```json\n["Add eggs"]\n```')).toEqual(['Add eggs']);
-    expect(parseRewrite('not json')).toEqual([]);
+    expect(parseRewrite('Sure:\n```json\n["Add eggs"]\n```')).toEqual({ commands: ['Add eggs'] });
+    expect(parseRewrite('{"commands": [], "reply": "Paris."}')).toEqual({ commands: [], reply: 'Paris.' });
+    expect(parseRewrite('not json')).toEqual({ commands: [] });
+  });
+
+  it('reads a whole messy brain dump and acts on every part of it', async () => {
+    const reply = JSON.stringify({ commands: [
+      'Add oat milk',
+      "Send a WhatsApp to Mum saying I'll ring you on Sunday",
+      'Remind me to book the car service on Friday at 9',
+    ] });
+    const { h, a, prompts } = withClaude(reply);
+    const r = await a.handle({ text: "ugh ok so we're out of oat milk again, and mum was asking about sunday so let her know I'll ring her then, oh and the car needs its service booked, friday morning maybe", now: NOW });
+    expect(prompts[0]).toMatch(/ugh ok so we're out of oat milk/);
+    expect(h.state.shopping.map((i) => i.name)).toContain('oat milk');
+    expect(r.links.some((l) => l.url.startsWith('https://wa.me/'))).toBe(true);
+    expect(h.state.reminders.some((x) => /car service/.test(x.text) && x.dueAt)).toBe(true);
+  });
+
+  it('answers a plain question', async () => {
+    const { a } = withClaude(JSON.stringify({ commands: [], reply: 'About 20 minutes at 200°C.' }));
+    const r = await a.handle({ text: 'how long do I roast broccoli for', now: NOW });
+    expect(r.text).toBe('About 20 minutes at 200°C.');
   });
 });

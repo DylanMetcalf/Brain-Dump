@@ -1916,6 +1916,10 @@ export class Assistant {
       await this.runPlan({ type: 'waiting.create', direction: 'them', personId: contact?.id, who, about: '' }, t, { quiet: true });
       return;
     }
+    if (w.notifyOnReply) {
+      t.out.lines.push(`Not yet — I'll let you know as soon as ${who.split(' ')[0]} replies.`);
+      return;
+    }
     t.out.lines.push('Not yet.');
     analyseBehaviour(this.state, this.ids, t.now);
     const sug = this.state.suggestions.find((s) => s.kind === 'notify_reply' && s.payload.waitingId === w.id && s.status === 'pending');
@@ -2109,6 +2113,21 @@ export class Assistant {
     r.handled.push(dateKey);
     if (exists) return;
     await this.createEvent(r.title, start, false, t, undefined, { durationMin: r.durationMin, routineId: r.id });
+  }
+
+  /** Used by the scheduler for automated routines: a quiet, system-owned turn. */
+  async materialiseRoutineAt(routineId: string, key: string, now: Date): Promise<void> {
+    const r = this.state.routines.find((x) => x.id === routineId);
+    if (!r) return;
+    let session = this.state.sessions.find((s) => s.device === 'automation' && !s.endedAt);
+    if (!session) {
+      session = { id: this.ids('ses'), startedAt: now.toISOString(), lastActivityAt: now.toISOString(), device: 'automation', turns: [], focus: [], pending: [], ledgerIds: [] };
+      this.state.sessions.push(session);
+    }
+    const t = await this.turn(session, now);
+    await this.materialiseRoutine(r, key, t);
+    session.pending = [];
+    session.endedAt = now.toISOString();
   }
 
   private onWeekly(t: TurnCtx) {

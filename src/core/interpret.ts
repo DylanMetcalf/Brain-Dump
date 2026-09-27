@@ -214,6 +214,8 @@ export function isNo(t: string): boolean {
 
 const GROCERY_WORDS = /\b(milk|eggs?|bread|butter|cheese|yog(?:h)?urt|apples?|bananas?|oranges?|lemons?|limes?|avocados?|tomatoes?|potatoes?|onions?|garlic|carrots?|lettuce|spinach|rice|pasta|flour|sugar|salt|pepper|oil|coffee|tea|juice|water|wine|beer|chicken|beef|fish|salmon|tuna|ham|bacon|sausages?|cereal|oats|honey|jam|biscuits?|cookies?|crisps|chocolate|shampoo|conditioner|soap|toothpaste|toothbrush|deodorant|razors?|tissues|toilet (?:paper|roll)|kitchen roll|paper towels|batteries|bin bags|detergent|washing (?:up )?liquid|bleach|sponges?|face masks?|masks?|eye patches|plasters|paracetamol|ibuprofen|vitamins|cat food|dog food|nappies|diapers|wipes|groceries|grocery|food|snacks?|fruit|veg(?:etables)?|herbs?|spices?|nuts|milk)\b/;
 
+const TASKY_OBJECT = /(?:\b\w+(?:ed|en)\b\s*$|\b(?:done|fixed|cut|sorted|checked|looked at|signed|haircut|hair cut|flu jab|jab|vaccine|vaccinated|appointment|licen[cs]e|passport|visa|mot|insurance|quote|refund|back to|ready|going|started|in touch|a lift|help|some sleep|some rest|a new job)\b)/;
+
 const ACTIVITIES = /(run|jog|walk|swim|ride|bike ride|cycle|gym|workout|work out|yoga|calisthenics|pilates|climb|hike|training|class|spin class|session)/;
 
 const PERSON_WORD = "([a-z][a-z'\\-]*(?: [a-z][a-z'\\-]*)?)";
@@ -645,6 +647,9 @@ const MATCHERS: Matcher[] = [
       const items = parseItems(when.rest || obj);
       if (!items.length) return undefined;
       if (items.some((i) => i.name.split(' ').length > 5)) return undefined;
+      // "get the car serviced", "get a haircut", "get my passport renewed" are tasks, not shopping.
+      const getVerb = /\b(?:need|have|got|must|should|gotta|want)(?: to)? get\b/.test(t) && !/\b(?:buy|pick up|grab|order)\b/.test(t);
+      if (getVerb && !GROCERY_WORDS.test(obj) && (TASKY_OBJECT.test(obj) || items.some((i) => i.name.split(' ').length > 3))) return undefined;
       const generic = items.length === 1 && /^(groceries|grocery|food|shopping|food shopping|the shopping|some shopping|stuff for dinner)$/.test(items[0].name);
       return { kind: 'shopping_add', raw: o, items, generic };
     }

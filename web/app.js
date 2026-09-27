@@ -341,7 +341,7 @@ async function patchProfile(body) {
 async function renderSettings() {
   const s = ui.state;
   const p = s.profile;
-  const [devices, integrations] = await Promise.all([api('/api/devices'), api('/api/integrations').catch(() => null)]);
+  const [devices, integrations, ai] = await Promise.all([api('/api/devices'), api('/api/integrations').catch(() => null), api('/api/ai').catch(() => null)]);
   const select = (value, options, onchange) => h('select', { onchange: (e) => onchange(e.target.value) }, Object.entries(options).map(([v, l]) => h('option', { value: v, selected: v === value ? true : undefined }, l)));
 
   const pairBox = h('div');
@@ -360,6 +360,9 @@ async function renderSettings() {
     h('section', { class: 'card' }, h('h2', {}, 'What I can do'),
       h('p', { class: 'empty' }, 'I only act within what you allow. Anything involving money, or that can’t be undone, always comes back to you.'),
       s.permissions.map((perm) => h('div', { class: 'row' }, h('label', {}, SCOPES[perm.scope] ?? perm.scope), select(perm.level, LEVELS, async (v) => { await api(`/api/permissions/${perm.scope}`, { method: 'PUT', body: { level: v } }); await loadState(); })))),
+
+    claudeCard(ai),
+    LOCAL ? null : oneTapCard(),
 
     s.trust.length ? h('section', { class: 'card' }, h('h2', {}, 'Things I don’t ask about any more'),
       s.trust.map((t) => h('div', { class: 'row' }, h('label', {}, t.actionType.replace('.', ' → '), h('div', { class: 'sub' }, t.trustedVia === 'earned' ? `after ${t.confirmed} approvals` : t.trustedVia === 'explicit' ? 'you told me' : `${t.confirmed} approvals`)),
@@ -409,6 +412,65 @@ async function renderSettings() {
     nav(),
   );
   renderTop();
+}
+
+function claudeCard(ai) {
+  const card = h('section', { class: 'card' }, h('h2', {}, 'Claude'));
+  if (LOCAL) {
+    const on = ai?.enabled !== false;
+    card.append(
+      h('p', { class: 'empty' }, ai?.state === 'unavailable'
+        ? 'Claude isn’t available here. Open this page inside the Claude app or claude.ai to use it.'
+        : 'When I can’t work out what you meant, I ask Claude to help. This uses your own Claude account, so there’s no key to set up. The first time, you’ll be asked to allow it.'),
+      h('div', { class: 'row' }, h('label', {}, 'Help from Claude'),
+        h('select', { onchange: async (e) => { await api('/api/ai', { method: e.target.value === 'on' ? 'PUT' : 'DELETE', body: {} }); renderSettings(); } },
+          h('option', { value: 'on', selected: on || undefined }, 'On'), h('option', { value: 'off', selected: !on || undefined }, 'Off'))));
+    return card;
+  }
+  const status = h('p', { class: 'empty' }, ai?.connected
+    ? `Connected${ai.hint ? ` (key ${ai.hint})` : ai.source === 'server' ? ' (set on the server)' : ''}. When I can’t work out what you meant, Claude helps, and everything still goes through the same safety checks.`
+    : 'Optional. Add an Anthropic API key and Claude will help with anything I can’t work out on my own. Get a key at console.anthropic.com.');
+  const input = h('input', { type: 'password', id: 'aikey', placeholder: 'sk-ant-…', autocomplete: 'off', 'aria-label': 'Anthropic API key' });
+  const msg = h('p', { class: 'empty', 'aria-live': 'polite' });
+  card.append(status,
+    h('form', { class: 'composer', onsubmit: async (e) => {
+      e.preventDefault();
+      msg.textContent = 'Checking the key…';
+      try {
+        await api('/api/ai', { method: 'PUT', body: { apiKey: input.value } });
+        renderSettings();
+      } catch (err) {
+        msg.textContent = err.message;
+      }
+    } }, input, h('button', { type: 'submit' }, 'Save')),
+    msg,
+    ai?.hint ? h('button', { class: 'btn ghost small', onclick: async () => { await api('/api/ai', { method: 'DELETE' }); renderSettings(); } }, 'Remove key') : null);
+  return card;
+}
+
+function oneTapCard() {
+  const out = h('div');
+  return h('section', { class: 'card' }, h('h2', {}, 'Talk with one tap'),
+    h('p', { class: 'empty' }, 'On iPhone, a Siri Shortcut lets you talk to me without opening the app: from the Action Button, Back Tap, a Home Screen or Lock Screen widget, or “Hey Siri, Brain Dump”.'),
+    h('div', { class: 'chips' }, h('button', { class: 'chip', onclick: async () => {
+      const r = await api('/api/auth/shortcut', { body: {} });
+      const url = (r.url.startsWith('http') ? r.url : location.origin + r.url) + '?format=text';
+      const copy = (text) => h('button', { class: 'btn ghost small', onclick: async (e) => {
+        try { await navigator.clipboard.writeText(text); e.target.textContent = 'Copied'; } catch { e.target.textContent = 'Select and copy it'; }
+      } }, 'Copy');
+      out.replaceChildren(
+        h('ol', { class: 'steps' },
+          h('li', {}, 'Open the Shortcuts app and tap +. Name it “Brain Dump”.'),
+          h('li', {}, 'Add “Dictate Text”.'),
+          h('li', {}, 'Add “Get Contents of URL”. Set the URL below, Method: POST, Request Body: File, and choose Dictated Text.'),
+          h('li', {}, 'Under Headers add: Authorization = Bearer followed by the key below, and Content-Type = text/plain.'),
+          h('li', {}, 'Add “Speak Text” with Contents of URL.'),
+          h('li', {}, 'Assign it to the Action Button (Settings → Action Button → Shortcut), Back Tap (Settings → Accessibility → Touch → Back Tap), or add it as a widget.')),
+        h('div', { class: 'row' }, h('label', {}, 'URL', h('div', { class: 'sub mono' }, url)), copy(url)),
+        h('div', { class: 'row' }, h('label', {}, 'Key', h('div', { class: 'sub mono' }, `Bearer ${r.token}`)), copy(`Bearer ${r.token}`)),
+        h('p', { class: 'empty' }, 'This key is shown only once. You can remove it any time under Devices. If I ask a follow-up question, run the Shortcut again to answer.'));
+    } }, 'Set up a Siri Shortcut')),
+    out);
 }
 
 function resetButton() {

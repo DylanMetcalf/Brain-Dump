@@ -20,6 +20,8 @@ import { hashToken, newToken, pairingCode, safeEqual } from './crypto.js';
 import { toICS } from './ics.js';
 import { DeviceRecord, loadOrCreateKey, Store } from './store.js';
 import { integrationRoutes, providersFor, IntegrationConfig } from './integrations.js';
+import { makeAskClaude, verifyKey } from './claude.js';
+import type { AskClaude } from '../core/assist.js';
 
 export interface AppOptions {
   dataDir: string;
@@ -30,6 +32,10 @@ export interface AppOptions {
   integrations?: IntegrationConfig;
   /** Extra/override providers (tests, self-hosted adapters). */
   providers?: (userId: string) => Partial<Providers>;
+  /** Server-wide Anthropic key (ANTHROPIC_API_KEY); a key saved in Settings takes precedence. */
+  anthropicApiKey?: string;
+  /** Test hook: replaces the real Claude call. */
+  askClaude?: (userId: string) => AskClaude | undefined;
   tickIntervalMs?: number;
   corsOrigins?: string[];
   fetchImpl?: typeof fetch;
@@ -116,7 +122,9 @@ export async function createApp(opts: AppOptions): Promise<App> {
       ...(await providersFor(state, secrets, opts.integrations ?? {}, clock, opts.fetchImpl, (s) => store.writeSecrets(userId, s))),
       ...(opts.providers?.(userId) ?? {}),
     };
-    return new Assistant(state, { providers, clock });
+    const key = typeof secrets.anthropic?.apiKey === 'string' ? secrets.anthropic.apiKey : opts.anthropicApiKey;
+    const askClaude = opts.askClaude ? opts.askClaude(userId) : key ? makeAskClaude(key) : undefined;
+    return new Assistant(state, { providers, clock, askClaude });
   }
 
   /** Run engine work for a user; persists and notifies other devices on change. */
@@ -473,6 +481,61 @@ export async function createApp(opts: AppOptions): Promise<App> {
     return undefined;
   });
 
+  // ---- Claude connection (optional) ----
+  route('GET', '/api/ai', true, async (c) => {
+    const secrets = await store.readSecrets(c.device!.userId);
+    return { connected: !!secrets.anthropic?.apiKey || !!opts.anthropicApiKey, source: secrets.anthropic?.apiKey ? 'settings' : opts.anthropicApiKey ? 'server' : null, hint: secrets.anthropic?.hint };
+  });
+
+  route('PUT', '/api/ai', true, async (c) => {
+    limit(`aikey:${c.device!.userId}`, 10, 60_000);
+    const key = String(c.body?.apiKey ?? '').trim();
+    if (!/^sk-ant-[A-Za-z0-9_-]{20,}$/.test(key)) throw new HttpError(400, 'That doesn’t look like an Anthropic API key (it starts with sk-ant-).');
+    const check = await verifyKey(key);
+    if (!check.ok) throw new HttpError(400, check.error ?? 'That key didn’t work.');
+    const secrets = await store.readSecrets(c.device!.userId);
+    secrets.anthropic = { apiKey: key, hint: `…${key.slice(-4)}`, savedAt: clock().toISOString() };
+    await store.writeSecrets(c.device!.userId, secrets);
+    return { connected: true, hint: secrets.anthropic.hint };
+  });
+
+  route('DELETE', '/api/ai', true, async (c) => {
+    const secrets = await store.readSecrets(c.device!.userId);
+    delete secrets.anthropic;
+    await store.writeSecrets(c.device!.userId, secrets);
+    return { connected: !!opts.anthropicApiKey };
+  });
+
+  // ---- One-tap talking (Siri Shortcut / Action Button / widgets) ----
+  /** Creates a dedicated key for a Shortcut. Shown once; revocable under Devices. */
+  route('POST', '/api/auth/shortcut', true, async (c) => {
+    const token = newToken();
+    const device = await addDevice(c.device!.userId, 'Siri Shortcut', token);
+    return { token, deviceId: device.id, url: `${opts.publicUrl ?? ''}/api/quick` };
+  });
+
+  /**
+   * Plain-text in, plain-text out, for Shortcuts: dictated text → reply to speak.
+   * Consecutive calls within the idle window continue the same conversation, so a
+   * follow-up question ("What time?") can be answered by running the Shortcut again.
+   */
+  const quickSessions = new Map<string, string>();
+  route('POST', '/api/quick', true, async (c) => {
+    limit(`quick:${c.device!.id}`, 60, 60_000);
+    const text = typeof c.body === 'string' ? c.body : str(c.body?.text);
+    if (!text) throw new HttpError(400, 'Nothing was heard.');
+    const r = await withAssistant(c.device!.userId, (a) => a.handle({ text, sessionId: quickSessions.get(c.device!.id), device: c.device!.name }));
+    if (r.sessionEnded) quickSessions.delete(c.device!.id);
+    else quickSessions.set(c.device!.id, r.sessionId);
+    const plain = c.url.searchParams.get('format') === 'text';
+    if (plain) {
+      c.res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+      c.res.end(r.text);
+      return undefined;
+    }
+    return { text: r.text, question: !!r.question, done: r.settled || r.sessionEnded };
+  });
+
   route('GET', '/api/health', false, async () => ({ ok: true }));
 
   // Integrations (OAuth). Registered from integrations.ts.
@@ -625,8 +688,10 @@ async function readJson(req: IncomingMessage): Promise<any> {
     chunks.push(chunk as Buffer);
   }
   if (!size) return {};
+  const raw = Buffer.concat(chunks).toString('utf8');
+  if (!/json/.test(req.headers['content-type'] ?? 'application/json')) return raw;
   try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    return JSON.parse(raw);
   } catch {
     throw new HttpError(400, 'Invalid JSON');
   }

@@ -177,3 +177,25 @@ describe('server', () => {
     clock.now = NOW;
   });
 });
+
+describe('one-tap and Claude settings', () => {
+  it('a Shortcut key can talk in plain text and continue the conversation', async () => {
+    const t = (await api('/api/auth/register', { body: { deviceName: 'Phone', timeZone: 'Europe/London' } })).json.token;
+    await onboard(t);
+    const sc = await api('/api/auth/shortcut', { token: t, body: {} });
+    const talk = async (text: string) => {
+      const r = await fetch(`${base}/api/quick?format=text`, { method: 'POST', headers: { Authorization: `Bearer ${sc.json.token}`, 'Content-Type': 'text/plain' }, body: text });
+      return r.text();
+    };
+    expect(await talk('Organise a Zoom with Rick')).toBe('What day?');
+    expect(await talk('Thursday')).toBe('What time?');
+    expect(await talk('2')).toMatch(/Zoom with Rick is in your calendar/);
+    expect((await api('/api/devices', { token: t })).json.devices.some((d: any) => d.name === 'Siri Shortcut')).toBe(true);
+  });
+  it('rejects malformed API keys without calling anyone', async () => {
+    const t = (await api('/api/auth/register', { body: {} })).json.token;
+    const r = await api('/api/ai', { method: 'PUT', token: t, body: { apiKey: 'hello' } });
+    expect(r.status).toBe(400);
+    expect((await api('/api/ai', { token: t })).json.connected).toBe(false);
+  });
+});

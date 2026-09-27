@@ -4,8 +4,8 @@
   "description": "Get it out of your head. I'll help with the rest.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f6f4ef",
-  "theme_color": "#3b5bdb",
+  "background_color": "#f4f1ea",
+  "theme_color": "#56694f",
   "icons": [
     { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
   ],

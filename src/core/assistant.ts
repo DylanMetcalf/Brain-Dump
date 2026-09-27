@@ -8,6 +8,7 @@
 //  • never claim an action that was not verified
 //  • optional questions are dropped when the user moves on; blockers are kept
 
+import { AskClaude, buildRewritePrompt, parseRewrite } from './assist.js';
 import { analyseBehaviour, pickProactive } from './behaviour.js';
 import { handledSummary, needsMe, needsMeText, scheduleSummary, weeklyBriefing, WEEKLY_PROMPTS } from './briefing.js';
 import { ActionPlan, ExecResult, Executor, metaFor } from './executor.js';
@@ -103,7 +104,11 @@ export class Assistant {
   readonly clock: () => Date;
   readonly ids: IdGen;
 
-  constructor(public state: UserState, opts: { providers?: Partial<Providers>; clock?: () => Date; ids?: IdGen } = {}) {
+  /** Optional Claude assist for thoughts the rule-based interpreter can't place. */
+  readonly askClaude?: AskClaude;
+
+  constructor(public state: UserState, opts: { providers?: Partial<Providers>; clock?: () => Date; ids?: IdGen; askClaude?: AskClaude } = {}) {
+    this.askClaude = opts.askClaude;
     this.clock = opts.clock ?? (() => new Date());
     this.ids = opts.ids ?? randomId;
     this.providers = { ...localProviders(() => this.state, this.ids, this.clock), ...(opts.providers ?? {}) } as Providers;
@@ -203,7 +208,7 @@ export class Assistant {
       assistantName: this.state.profile.assistantName,
       nameAliases: this.state.profile.nameAliases,
     });
-    const thoughts = interp.thoughts;
+    const thoughts = await this.withClaudeAssist(interp.thoughts, now, session);
 
     if (this.state.profile.onboarding === 'name' && !session.pending.some((q) => q.kind === 'onboarding')) {
       if (!thoughts.length || /^(hi|hello|hey|start|begin)\b/i.test(text.trim())) {
@@ -233,6 +238,37 @@ export class Assistant {
       if (t.out.ended) break;
     }
     return this.finish(t, req);
+  }
+
+  /**
+   * Thoughts that fell through to a generic note get one chance to be understood by Claude.
+   * Claude only rewrites them into plain commands; the normal pipeline decides what happens.
+   */
+  private async withClaudeAssist(thoughts: Thought[], now: Date, session: Session): Promise<Thought[]> {
+    if (!this.askClaude) return thoughts;
+    // A pending question takes free-form answers (a message body, a name): don't rewrite those.
+    const answering = this.activeQuestion(session);
+    const out: Thought[] = [];
+    for (const [i, th] of thoughts.entries()) {
+      const unclear = th.kind === 'note' && !th.idea && !(i === 0 && answering);
+      if (!unclear) {
+        out.push(th);
+        continue;
+      }
+      try {
+        const rewritten = parseRewrite(await this.askClaude(buildRewritePrompt(th.raw, this.state, now)));
+        const opts = { now, timeZone: this.tz, assistantName: this.state.profile.assistantName };
+        const understood = rewritten.flatMap((r) => interpret(r, opts).thoughts);
+        if (!rewritten.length && /\?$/.test(th.raw)) {
+          out.push(th); // a question: the note handler answers it politely
+        } else if (understood.length) {
+          out.push(...understood);
+        } else out.push(th);
+      } catch {
+        out.push(th); // Claude unavailable: never lose the thought
+      }
+    }
+    return out;
   }
 
   private async turn(session: Session, now: Date): Promise<TurnCtx> {

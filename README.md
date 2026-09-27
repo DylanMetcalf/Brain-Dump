@@ -74,6 +74,21 @@ desktop/         Electron tray app (global shortcut, floating mini window)
 
 The server has no runtime dependencies. It uses only Node's standard library.
 
+## Claude (optional)
+
+When the rule-based interpreter can't place a thought, Claude rewrites it into plain commands, for example "the boiler's making that noise again" → "Remind me to get someone to look at the boiler". Those commands then go through the same context resolution, risk matrix, permissions and verification as everything else, so Claude never acts directly (`src/core/assist.ts`).
+
+- **Server:** add an Anthropic API key under **Settings → Claude** (it's checked, then stored encrypted), or set `ANTHROPIC_API_KEY`. The server uses `claude-opus-5` at low effort, with server-side refusal fallbacks enabled.
+- **Phone test build:** uses the viewer's own Claude account through the page's `sample` capability, so there's no key to set up.
+
+## Talk with one tap (iPhone)
+
+**Settings → Talk with one tap** creates a dedicated key and walks through a Siri Shortcut (Dictate Text → POST to `/api/quick?format=text` → Speak Text). Assign it to the Action Button, Back Tap, a Home Screen or Lock Screen widget, or "Hey Siri, Brain Dump". Running it again within 10 minutes continues the same conversation, so a follow-up question can be answered. This needs the server reachable over HTTPS (see Hosting).
+
+## Hosting
+
+`Dockerfile` and `render.yaml` are included. On Render: New → Blueprint → this repo, then set `PUBLIC_URL` to the service address. The attached disk keeps the encrypted data; Render disks need a paid instance. Any Docker host works; mount a volume at `/data`.
+
 ## Integrations: what is real and what is prepared
 
 | Capability | Status |

@@ -5,7 +5,7 @@
 import { mkdir, readFile, rename, rm, writeFile, readdir, chmod } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { decrypt, encrypt } from './crypto.js';
 import { createUserState, migrateState } from '../core/state.js';
 import type { UserState } from '../core/types.js';
@@ -27,9 +27,12 @@ interface AccountIndex {
 
 export async function loadOrCreateKey(dataDir: string, envKey?: string): Promise<Buffer> {
   if (envKey) {
-    const k = /^[0-9a-f]{64}$/i.test(envKey) ? Buffer.from(envKey, 'hex') : Buffer.from(envKey, 'base64');
-    if (k.length !== 32) throw new Error('BRAIN_DUMP_KEY must be 32 bytes (hex or base64)');
-    return k;
+    if (/^[0-9a-f]{64}$/i.test(envKey)) return Buffer.from(envKey, 'hex');
+    const b = Buffer.from(envKey, 'base64');
+    if (b.length === 32 && /^[A-Za-z0-9+/=_-]+$/.test(envKey)) return b;
+    // Any other secret (e.g. a host-generated random string) is stretched into a 32-byte key.
+    if (envKey.length < 24) throw new Error('BRAIN_DUMP_KEY is too short — use at least 24 random characters.');
+    return createHash('sha256').update(envKey).digest();
   }
   await mkdir(dataDir, { recursive: true });
   const path = join(dataDir, '.key');

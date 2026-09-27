@@ -11,14 +11,27 @@ import type { AppNotification, PermissionLevel, Scope, UserState } from '../core
 import { clientState } from '../core/view.js';
 
 const KEY = 'bd.local.state';
+const AI_KEY = 'bd.local.ai';
+
+type Sample = (input: string, opts?: { modelTier?: string }) => Promise<{ text: string }>;
 type Listener = (type: string, data: unknown) => void;
 
 export class LocalServer {
   private state: UserState;
   private listeners = new Set<Listener>();
   private chain: Promise<unknown> = Promise.resolve();
+  private sample: Sample | null = null;
+  private aiState: 'checking' | 'available' | 'unavailable' | 'declined' = 'checking';
 
   constructor() {
+    // Claude through the viewer's own Claude account (no API key). Absent outside a Claude viewer.
+    const claude = (globalThis as any).claude;
+    if (claude?.use) {
+      claude.use('sample').then((s: Sample | null) => {
+        this.sample = s;
+        this.aiState = s ? 'available' : 'unavailable';
+      }, () => (this.aiState = 'unavailable'));
+    } else this.aiState = 'unavailable';
     this.state = this.load() ?? createUserState('local', Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', new Date());
     this.save();
     setInterval(() => void this.runTick(), 30_000);
@@ -71,6 +84,27 @@ export class LocalServer {
     return run;
   }
 
+  private aiEnabled(): boolean {
+    try {
+      return localStorage.getItem(AI_KEY) !== 'off';
+    } catch {
+      return true;
+    }
+  }
+
+  private askClaude() {
+    if (!this.sample || !this.aiEnabled() || this.aiState === 'declined') return undefined;
+    const sample = this.sample;
+    return async (prompt: string) => {
+      try {
+        return (await sample(prompt, { modelTier: 'quick' })).text;
+      } catch (e: any) {
+        if (['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].includes(e?.code)) this.aiState = 'declined';
+        throw e;
+      }
+    };
+  }
+
   reset() {
     try {
       localStorage.removeItem(KEY);
@@ -82,7 +116,7 @@ export class LocalServer {
   async request(path: string, method: string, body: any): Promise<unknown> {
     const url = new URL(path, 'http://local');
     const p = url.pathname;
-    const a = () => new Assistant(this.state);
+    const a = () => new Assistant(this.state, { askClaude: this.askClaude() });
     const s = () => this.state;
     const bump = () => (this.state.version += 1);
     const m = (re: RegExp) => p.match(re);
@@ -192,6 +226,14 @@ export class LocalServer {
       }
       if ((mm = m(/^\/api\/notifications\/(.+)\/act$/))) return a().actOnNotification(mm[1], String(body?.value ?? ''));
       if (p === '/api/devices') return { devices: [{ id: 'local', name: 'This phone', createdAt: s().profile.createdAt, lastSeenAt: new Date().toISOString(), current: true }] };
+      if (p === '/api/ai') {
+        if (method === 'PUT' || method === 'DELETE') {
+          try {
+            localStorage.setItem(AI_KEY, method === 'PUT' ? 'on' : 'off');
+          } catch {}
+        }
+        return { connected: !!this.sample && this.aiEnabled() && this.aiState !== 'declined', source: 'account', state: this.aiState, enabled: this.aiEnabled() };
+      }
       if (p === '/api/integrations') return { available: { google: false, services: [] }, connected: {} };
       if (p === '/api/account' && method === 'DELETE') {
         this.reset();

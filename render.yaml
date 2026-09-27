@@ -1,0 +1,19 @@
+# One-click hosting on Render (https://render.com): New → Blueprint → pick this repo.
+# The disk keeps your encrypted data between deploys (Render disks need a paid instance).
+services:
+  - type: web
+    name: brain-dump
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/health
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: BRAIN_DUMP_KEY
+        generateValue: true
+      - key: PUBLIC_URL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false

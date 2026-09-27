@@ -564,7 +564,13 @@ export async function createApp(opts: AppOptions): Promise<App> {
   route('POST', '/api/auth/shortcut', true, async (c) => {
     const token = newToken();
     const device = await addDevice(c.device!.userId, 'Siri Shortcut', token);
-    return { token, deviceId: device.id, url: `${baseUrl(c)}/api/quick` };
+    return {
+      token,
+      deviceId: device.id,
+      url: `${baseUrl(c)}/api/quick`,
+      /** The whole Shortcut in one link: the dictated words go on the end. */
+      link: `${baseUrl(c)}/api/quick?format=text&key=${encodeURIComponent(token)}&text=`,
+    };
   });
 
   /**
@@ -573,20 +579,46 @@ export async function createApp(opts: AppOptions): Promise<App> {
    * follow-up question ("What time?") can be answered by running the Shortcut again.
    */
   const quickSessions = new Map<string, string>();
-  route('POST', '/api/quick', true, async (c) => {
+  const quick: Handler = async (c) => {
     limit(`quick:${c.device!.id}`, 60, 60_000);
-    const text = typeof c.body === 'string' ? c.body : str(c.body?.text);
+    const text = (c.url.searchParams.get('text') ?? '').trim() || (typeof c.body === 'string' ? c.body : str(c.body?.text));
     if (!text) throw new HttpError(400, 'Nothing was heard.');
     const r = await withAssistant(c.device!.userId, (a) => a.handle({ text, sessionId: quickSessions.get(c.device!.id), device: c.device!.name }));
     if (r.sessionEnded) quickSessions.delete(c.device!.id);
     else quickSessions.set(c.device!.id, r.sessionId);
-    const plain = c.url.searchParams.get('format') === 'text';
-    if (plain) {
+    if (c.url.searchParams.get('format') === 'text') {
       c.res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
       c.res.end(r.text);
       return undefined;
     }
     return { text: r.text, question: !!r.question, done: r.settled || r.sessionEnded };
+  };
+  route('POST', '/api/quick', true, quick);
+  route('GET', '/api/quick', true, quick);
+
+  // ---- Setup progress (the Home screen checklist) ----
+  route('GET', '/api/setup', true, async (c) => {
+    const userId = c.device!.userId;
+    const secrets = await store.readSecrets(userId);
+    return {
+      backupCode: store.recovery.some((r) => r.userId === userId),
+      shortcut: store.devices.some((d) => d.userId === userId && d.name === 'Siri Shortcut' && d.lastSeenAt !== d.createdAt),
+      shortcutCreated: store.devices.some((d) => d.userId === userId && d.name === 'Siri Shortcut'),
+      push: (secrets.push ?? []).some((p: PushSubscriptionRecord) => p.deviceId === c.device!.id),
+      claude: !!secrets.anthropic?.apiKey || !!opts.anthropicApiKey,
+    };
+  });
+
+  /** Check the Claude connection for real, with whichever key is in use. */
+  route('POST', '/api/ai/test', true, async (c) => {
+    limit(`aitest:${c.device!.userId}`, 5, 60_000);
+    const secrets = await store.readSecrets(c.device!.userId);
+    const key = secrets.anthropic?.apiKey ?? opts.anthropicApiKey;
+    if (!key) return { ok: false, message: 'No key is set yet. Add one here, or set ANTHROPIC_API_KEY on Render.' };
+    const r = await verifyKey(key);
+    return r.ok
+      ? { ok: true, message: `Claude is connected${secrets.anthropic?.apiKey ? '' : ' (using the key on Render)'}.` }
+      : { ok: false, message: r.error ?? 'Claude didn’t answer.' };
   });
 
   // ---- Push notifications ----
@@ -655,6 +687,8 @@ export async function createApp(opts: AppOptions): Promise<App> {
     let token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
     // EventSource cannot set headers; the stream endpoint alone accepts ?token=.
     if (!token && url.pathname === '/api/stream') token = url.searchParams.get('token') ?? '';
+    // Siri Shortcuts: a dedicated, revocable Shortcut key may ride in the link itself.
+    if (!token && url.pathname === '/api/quick') token = url.searchParams.get('key') ?? '';
     if (!token) return undefined;
     const h = hashToken(token);
     const d = store.devices.find((x) => safeEqual(x.tokenHash, h));

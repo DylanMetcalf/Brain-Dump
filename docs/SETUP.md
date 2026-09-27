@@ -48,26 +48,28 @@ Open the app from the Home Screen, then **Settings → Notifications on this pho
 (On iPhone this only works once the app is on the Home Screen and opened from there. It needs iOS 16.4 or later.)
 
 ### 3. Save a backup code
-**Settings → Backup code → Create backup code.** Save it in Notes or a password manager.
+**Settings → Backup code → Get my backup code → Show my backup code** (or use the **Finish setting up** card). Save it in Notes or a password manager.
 There's no password; this code is how you get back in on a new phone or after clearing Safari data.
 
-### 4. One-tap talking (Action Button, Back Tap or "Hey Siri")
-In the app: **Settings → Talk with one tap → Set up a Siri Shortcut.** It shows a URL and a key, each with a Copy button. Then, in the **Shortcuts** app:
+### 4. One-tap talking (widget, Action Button, Back Tap or "Hey Siri")
+In the app: **Settings → Talk with one tap** (or the **Finish setting up** card on the Home screen) → **Create my Shortcut link** → **Copy link**. Tap **Test the link** to check it works.
 
-1. Tap **+** and name the shortcut **Brain Dump**.
-2. Add the action **Dictate Text**.
-3. Add **Get Contents of URL** and paste the URL. Tap the arrow to show more:
-   - **Method:** POST
-   - **Headers → Add new header:** Key `Authorization`, Value: the key (starts with `Bearer `)
-   - **Request Body:** JSON → Add new field → Text → Key `text`, Value: **Dictated Text**
-4. Add **Speak Text** (it uses the result automatically).
-5. Put it somewhere one tap away:
-   - **Action Button** (iPhone 15 Pro and later): Settings → Action Button → Shortcut → Brain Dump
-   - **Back Tap** (any recent iPhone): Settings → Accessibility → Touch → Back Tap → Double Tap → Brain Dump
-   - **Lock Screen or Home Screen widget**: add the Shortcuts widget and pick Brain Dump
-   - **Siri**: say "Hey Siri, Brain Dump"
+Then, in Apple's **Shortcuts** app:
+1. Tap **+**.
+2. Add **Dictate Text**.
+3. Add **Get Contents of URL**, tap the blue "URL", and paste the link.
+4. With the cursor at the very end of the link, tap **Dictated Text** in the bar above the keyboard.
+5. Add **Speak Text**.
+6. Rename it to **Brain Dump**.
 
-If it asks a follow-up ("What time?"), run the shortcut again within 10 minutes to answer.
+Put it one tap away:
+- **Home Screen widget**: press and hold the Home Screen → Edit → Add Widget → Shortcuts → Brain Dump
+- **Control Centre / Lock Screen (iOS 18)**: Control Centre → + → Add a Control → Shortcut → Brain Dump
+- **Back Tap**: Settings → Accessibility → Touch → Back Tap → Double Tap → Brain Dump
+- **Action Button** (iPhone 15 Pro and later): Settings → Action Button → Shortcut → Brain Dump
+- **Siri**: "Hey Siri, Brain Dump"
+
+The first time it runs, allow dictation and choose **Always Allow** for connecting to your Brain Dump address. If Brain Dump asks a follow-up ("What time?"), run it again within 10 minutes to answer.
 
 ### 5. Using it
 - Tap the orb and talk, or type. Say "that's all" when you're done.

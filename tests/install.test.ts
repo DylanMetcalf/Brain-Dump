@@ -133,3 +133,36 @@ describe('push keys', () => {
     expect(a.publicKey.length).toBeGreaterThan(40);
   });
 });
+
+describe('one-link Siri Shortcut', () => {
+  it('works with just the link plus the dictated words, and continues the conversation', async () => {
+    const t = await newUser();
+    const { link } = (await api('/api/auth/shortcut', { token: t, body: {} })).json;
+    expect(link).toMatch(/\/api\/quick\?format=text&key=.+&text=$/);
+    const path = link.replace(/^https?:\/\/[^/]+/, '');
+    const say = async (words: string) => (await fetch(base + path + encodeURIComponent(words))).text();
+    expect(await say('I need oat milk and remind me to call the vet tomorrow at 9')).toMatch(/Added oat milk.*remind you to call the vet tomorrow at 9 AM/);
+    expect(await say('Organise a zoom with Rick')).toBe('What day?');
+    expect(await say('Friday')).toBe('What time?');
+    // A key in the link only works for this one endpoint.
+    const key = new URL(link).searchParams.get('key');
+    expect((await fetch(`${base}/api/state?key=${key}`)).status).toBe(401);
+    expect((await fetch(`${base}/api/quick?format=text&key=wrong&text=hi`)).status).toBe(401);
+  });
+
+  it('reports setup progress for the Home screen checklist', async () => {
+    const t = await newUser();
+    expect((await api('/api/setup', { token: t })).json).toMatchObject({ backupCode: false, shortcutCreated: false, push: false, claude: false });
+    await api('/api/auth/recovery', { token: t, body: {} });
+    await api('/api/auth/shortcut', { token: t, body: {} });
+    await api('/api/push/subscribe', { token: t, body: { subscription: sub(9) } });
+    expect((await api('/api/setup', { token: t })).json).toMatchObject({ backupCode: true, shortcutCreated: true, push: true });
+  });
+
+  it('Test Claude explains when no key is set', async () => {
+    const t = await newUser();
+    const r = await api('/api/ai/test', { token: t, body: {} });
+    expect(r.json).toMatchObject({ ok: false });
+    expect(r.json.message).toMatch(/ANTHROPIC_API_KEY on Render/);
+  });
+});

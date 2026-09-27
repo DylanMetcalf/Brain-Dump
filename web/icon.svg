@@ -1,15 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <radialGradient id="g" cx="35%" cy="30%" r="80%">
-      <stop offset="0" stop-color="#93a58a"/>
-      <stop offset="1" stop-color="#56694f"/>
-    </radialGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8fa586"/><stop offset="1" stop-color="#5d7156"/></linearGradient>
   </defs>
-  <rect width="512" height="512" rx="112" fill="#f4f1ea"/>
-  <circle cx="256" cy="256" r="176" fill="url(#g)"/>
-  <g fill="none" stroke="#fff" stroke-width="24" stroke-linecap="round">
-    <path d="M256 150a36 36 0 0 0-36 36v70a36 36 0 0 0 72 0v-70a36 36 0 0 0-36-36Z"/>
-    <path d="M324 244v12a68 68 0 0 1-136 0v-12"/>
-    <path d="M256 324v34"/>
-  </g>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <g transform="translate(0,-16)">
+  <!-- thought cloud -->
+  <path d="M170 318c-38 0-66-27-66-62 0-33 25-59 58-62 8-42 45-72 90-72 38 0 71 22 85 55 5-1 10-1 15-1 44 0 78 33 78 74s-34 68-78 68H170z" fill="#f4f1ea"/>
+  <circle cx="176" cy="372" r="20" fill="#f4f1ea"/>
+  <circle cx="138" cy="410" r="11" fill="#f4f1ea"/>
+  <!-- sprig inside -->
+  <g fill="none" stroke="#6b8062" stroke-width="10" stroke-linecap="round"><path d="M256 290c0-40 6-70 22-100"/></g>
+  <path d="M262 244c-26-4-44-20-48-44 26 2 44 18 48 44z" fill="#8fa586"/>
+  <path d="M270 212c20-12 44-12 62 4-20 14-44 12-62-4z" fill="#8fa586"/>
+</g>
 </svg>

@@ -68,6 +68,15 @@ function toast(text, actions = [], timeout = 7000) {
   if (timeout) setTimeout(() => box.remove(), timeout);
 }
 
+// Optional pieces of the UI are written as `condition ? element : null`. The DOM would
+// print those as the text "null", so optional children are always skipped instead.
+for (const method of ['append', 'replaceChildren']) {
+  const original = Element.prototype[method];
+  Element.prototype[method] = function (...kids) {
+    return original.apply(this, kids.flat(Infinity).filter((k) => k !== null && k !== undefined && k !== false));
+  };
+}
+
 const app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -200,8 +209,7 @@ function renderHomeCards() {
   const box = document.getElementById('cards');
   if (!box || !ui.overview || MINI) return;
   box.replaceChildren();
-  const hint = installHint();
-  if (hint) box.append(hint);
+  box.append(setupCard() ?? installHint());
   const o = ui.overview;
   if (o.needsMe.items.length) {
     box.append(h('section', { class: 'card' }, h('h2', {}, 'Needs you'), h('ul', { class: 'list' }, o.needsMe.items.slice(0, 6).map((i) => h('li', {}, h('span', { class: 'grow' }, i.text))))));
@@ -364,7 +372,9 @@ async function renderSettings() {
       s.permissions.map((perm) => h('div', { class: 'row' }, h('label', {}, SCOPES[perm.scope] ?? perm.scope), select(perm.level, LEVELS, async (v) => { await api(`/api/permissions/${perm.scope}`, { method: 'PUT', body: { level: v } }); await loadState(); })))),
 
     claudeCard(ai),
-    LOCAL ? null : oneTapCard(),
+    LOCAL ? null : h('section', { class: 'card' }, h('h2', {}, 'Talk with one tap'),
+      h('p', { class: 'empty' }, 'A Home Screen widget, the Action Button, or a double-tap on the back of your phone that listens straight away.'),
+      h('a', { class: 'btn', href: '#shortcut' }, 'Set up one-tap talking')),
 
     s.trust.length ? h('section', { class: 'card' }, h('h2', {}, 'Things I don’t ask about any more'),
       s.trust.map((t) => h('div', { class: 'row' }, h('label', {}, t.actionType.replace('.', ' → '), h('div', { class: 'sub' }, t.trustedVia === 'earned' ? `after ${t.confirmed} approvals` : t.trustedVia === 'explicit' ? 'you told me' : `${t.confirmed} approvals`)),
@@ -398,8 +408,8 @@ async function renderSettings() {
       h('div', { class: 'chips' }, h('button', { class: 'chip', onclick: async () => { const r = await api('/api/calendar/feed', { body: {} }); prompt('Subscribe to this private calendar link in Apple/Google/Outlook Calendar:', r.url.startsWith('http') ? r.url : location.origin + r.url); } }, 'Calendar subscription link'))),
 
     LOCAL ? null : h('section', { class: 'card' }, h('h2', {}, 'Backup code'),
-      h('p', { class: 'empty' }, 'There’s no password. If you lose this phone or clear its data, a backup code gets you back in. Keep it somewhere safe, like your Notes or password manager.'),
-      backupBox()),
+      h('p', { class: 'empty' }, 'Your way back in if you lose or change your phone.'),
+      h('a', { class: 'btn', href: '#backup' }, 'Get my backup code')),
     LOCAL ? null : h('section', { class: 'card' }, h('h2', {}, 'Devices'),
       h('ul', { class: 'list' }, devices.devices.map((d) => h('li', {}, h('span', { class: 'grow' }, d.name, d.current ? ' (this device)' : '', h('div', { class: 'sub' }, `last seen ${new Date(d.lastSeenAt).toLocaleString()}`)),
         !d.current ? h('button', { class: 'btn ghost small', onclick: async () => { await api(`/api/devices/${d.id}`, { method: 'DELETE' }); renderSettings(); } }, 'Remove') : null))),
@@ -417,19 +427,6 @@ async function renderSettings() {
     nav(),
   );
   renderTop();
-}
-
-function backupBox() {
-  const out = h('div');
-  const show = (exists) => out.replaceChildren(
-    exists ? h('p', { class: 'empty' }, 'You have a backup code. Making a new one replaces it.') : null,
-    h('button', { class: 'btn ghost small', onclick: async () => {
-      const r = await api('/api/auth/recovery', { body: {} });
-      out.replaceChildren(h('div', { class: 'code' }, r.code), h('p', { class: 'empty' }, 'Write this down or save it now — it won’t be shown again.'),
-        h('button', { class: 'btn ghost small', onclick: async (e) => { try { await navigator.clipboard.writeText(r.code); e.target.textContent = 'Copied'; } catch { e.target.textContent = 'Select and copy it'; } } }, 'Copy'));
-    } }, exists ? 'Make a new backup code' : 'Create backup code'));
-  api('/api/auth/recovery').then((r) => show(r.exists)).catch(() => show(false));
-  return out;
 }
 
 function urlBase64ToUint8Array(base64) {
@@ -496,7 +493,7 @@ function claudeCard(ai) {
     return card;
   }
   const status = h('p', { class: 'empty' }, ai?.connected
-    ? `Connected${ai.hint ? ` (key ${ai.hint})` : ai.source === 'server' ? ' (set on the server)' : ''}. When I can’t work out what you meant, Claude helps, and everything still goes through the same safety checks.`
+    ? `Connected ${ai.hint ? `with your key ${ai.hint}` : ai.source === 'server' ? 'with the key set on Render. Nothing to paste here.' : ''} When I can’t work out what you meant, Claude helps, and everything still goes through the same safety checks.`
     : 'Optional. Add an Anthropic API key and Claude will help with anything I can’t work out on my own. Get a key at console.anthropic.com.');
   const input = h('input', { type: 'password', id: 'aikey', placeholder: 'sk-ant-…', autocomplete: 'off', 'aria-label': 'Anthropic API key' });
   const msg = h('p', { class: 'empty', 'aria-live': 'polite' });
@@ -512,34 +509,14 @@ function claudeCard(ai) {
       }
     } }, input, h('button', { type: 'submit' }, 'Save')),
     msg,
-    ai?.hint ? h('button', { class: 'btn ghost small', onclick: async () => { await api('/api/ai', { method: 'DELETE' }); renderSettings(); } }, 'Remove key') : null);
+    h('div', { class: 'chips' },
+      h('button', { class: 'btn ghost small', onclick: async () => {
+        msg.textContent = 'Asking Claude…';
+        const r = await api('/api/ai/test', { body: {} }).catch((e) => ({ message: e.message }));
+        msg.textContent = r.message;
+      } }, 'Test Claude'),
+      ai?.hint ? h('button', { class: 'btn ghost small', onclick: async () => { await api('/api/ai', { method: 'DELETE' }); renderSettings(); } }, 'Remove key') : null));
   return card;
-}
-
-function oneTapCard() {
-  const out = h('div');
-  return h('section', { class: 'card' }, h('h2', {}, 'Talk with one tap'),
-    h('p', { class: 'empty' }, 'On iPhone, a Siri Shortcut lets you talk to me without opening the app: from the Action Button, Back Tap, a Home Screen or Lock Screen widget, or “Hey Siri, Brain Dump”.'),
-    h('div', { class: 'chips' }, h('button', { class: 'chip', onclick: async () => {
-      const r = await api('/api/auth/shortcut', { body: {} });
-      const url = (r.url.startsWith('http') ? r.url : location.origin + r.url) + '?format=text';
-      const copy = (text) => h('button', { class: 'btn ghost small', onclick: async (e) => {
-        try { await navigator.clipboard.writeText(text); e.target.textContent = 'Copied'; } catch { e.target.textContent = 'Select and copy it'; }
-      } }, 'Copy');
-      out.replaceChildren(
-        h('ol', { class: 'steps' },
-          h('li', {}, 'Open the Shortcuts app and tap +. Name it “Brain Dump”.'),
-          h('li', {}, 'Add “Dictate Text”.'),
-          h('li', {}, 'Add “Get Contents of URL” and paste the URL below. Tap the arrow to show more: Method → POST.'),
-          h('li', {}, 'Headers → Add new header: Key “Authorization”, Value: the key below (starting with Bearer).'),
-          h('li', {}, 'Request Body → JSON → Add new field → Text. Key: “text”. Value: choose Dictated Text.'),
-          h('li', {}, 'Add “Speak Text” with Contents of URL.'),
-          h('li', {}, 'Assign it to the Action Button (Settings → Action Button → Shortcut), Back Tap (Settings → Accessibility → Touch → Back Tap), or add it as a widget.')),
-        h('div', { class: 'row' }, h('label', {}, 'URL', h('div', { class: 'sub mono' }, url)), copy(url)),
-        h('div', { class: 'row' }, h('label', {}, 'Key', h('div', { class: 'sub mono' }, `Bearer ${r.token}`)), copy(`Bearer ${r.token}`)),
-        h('p', { class: 'empty' }, 'This key is shown only once. You can remove it any time under Devices. If I ask a follow-up question, run the Shortcut again to answer.'));
-    } }, 'Set up a Siri Shortcut')),
-    out);
 }
 
 function resetButton() {
@@ -639,6 +616,144 @@ async function renderWelcome() {
 }
 
 // ---------------------------------------------------------------------------
+// Guided setup screens
+// ---------------------------------------------------------------------------
+
+function copyButton(text, label = 'Copy') {
+  return h('button', { class: 'btn small', type: 'button', onclick: async (e) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      e.target.textContent = 'Copied ✓';
+    } catch {
+      e.target.textContent = 'Press and hold the text to copy';
+    }
+  } }, label);
+}
+
+function screen(title, ...body) {
+  app.replaceChildren(
+    h('header', { class: 'top', id: 'top' }),
+    h('a', { class: 'back', href: '#settings' }, '‹ Settings'),
+    h('h1', { class: 'screen-title' }, title),
+    ...body,
+    nav(),
+  );
+  renderTop();
+  window.scrollTo(0, 0);
+}
+
+function renderBackupScreen() {
+  const out = h('div', { class: 'card' },
+    h('p', {}, 'Brain Dump has no password. If you lose this phone, get a new one, or clear Safari’s data, this code is how you get back in, with everything still there.'),
+    h('p', { class: 'empty' }, 'Save it in your Notes app, a password manager, or somewhere safe. Anyone with the code can open your Brain Dump, so keep it private.'),
+    h('button', { class: 'btn big', onclick: async () => {
+      const r = await api('/api/auth/recovery', { body: {} });
+      out.replaceChildren(
+        h('p', {}, 'Your backup code:'),
+        h('div', { class: 'code', 'aria-label': 'Backup code' }, r.code),
+        h('div', { class: 'chips center' }, copyButton(r.code, 'Copy code')),
+        h('p', { class: 'empty' }, 'It won’t be shown again. Making a new code later replaces this one.'),
+        h('p', { class: 'empty' }, 'To use it on a new phone: open Brain Dump, tap “I already use Brain Dump”, and type the code.'),
+        h('a', { class: 'btn big', href: '#home', onclick: () => refreshSetup() }, 'I’ve saved it'));
+    } }, 'Show my backup code'));
+  screen('Backup code', out);
+}
+
+async function renderShortcutScreen() {
+  const status = h('div');
+  const make = h('button', { class: 'btn big', onclick: async () => {
+    make.disabled = true;
+    try {
+      const r = await api('/api/auth/shortcut', { body: {} });
+      showLink(r.link);
+    } catch (err) {
+      status.replaceChildren(h('p', { class: 'error' }, `Couldn’t create the link: ${err.message}`));
+      make.disabled = false;
+    }
+  } }, 'Create my Shortcut link');
+
+  const showLink = (link) => {
+    const test = h('p', { class: 'empty', 'aria-live': 'polite' });
+    status.replaceChildren(
+      h('p', {}, 'Your personal link. Copy it now; you’ll paste it in step 3.'),
+      h('div', { class: 'linkbox mono' }, link),
+      h('div', { class: 'chips' }, copyButton(link, 'Copy link'),
+        h('button', { class: 'btn ghost small', onclick: async () => {
+          test.textContent = 'Testing…';
+          try {
+            const res = await fetch(link + encodeURIComponent('What still needs me?'));
+            test.textContent = res.ok ? `It works. Brain Dump replied: “${await res.text()}”` : `The link didn’t work (${res.status}).`;
+          } catch {
+            test.textContent = 'Couldn’t reach Brain Dump.';
+          }
+        } }, 'Test the link')),
+      test,
+      h('p', { class: 'empty' }, 'Keep this link private: it works like a key. You can switch it off any time in Settings → Devices (“Siri Shortcut”).'));
+    make.remove();
+  };
+
+  const step = (n, title, detail) => h('li', {}, h('strong', {}, title), detail ? h('div', { class: 'sub' }, detail) : null);
+
+  screen('Talk with one tap',
+    h('div', { class: 'card' },
+      h('p', {}, 'Talk to Brain Dump without opening it. A Siri Shortcut listens, sends what you say, and reads the answer out loud. Then you can put it on your Home Screen as a widget, on the Action Button, or behind a double-tap on the back of your phone.'),
+      status, make),
+    h('section', { class: 'card' }, h('h2', {}, 'Make the Shortcut (about 2 minutes)'),
+      h('ol', { class: 'steps big' },
+        step(1, 'Open the Shortcuts app and tap +', 'It’s Apple’s app with the pink and blue icon. The + is at the top right.'),
+        step(2, 'Add “Dictate Text”', 'Tap “Add Action” (or the search bar at the bottom), type Dictate, and tap Dictate Text.'),
+        step(3, 'Add “Get Contents of URL” and paste your link', 'Search “Get Contents”, tap it, then tap the blue “URL” and paste.'),
+        step(4, 'Put “Dictated Text” on the end of the link', 'With the cursor at the very end of the link, tap “Dictated Text” in the bar above the keyboard. It appears as a blue bubble.'),
+        step(5, 'Add “Speak Text”', 'Search “Speak”, tap Speak Text. It reads Brain Dump’s answer.'),
+        step(6, 'Name it “Brain Dump”', 'Tap the name at the top, rename it, then tap Done.'))),
+    h('section', { class: 'card' }, h('h2', {}, 'Put it one tap away'),
+      h('ul', { class: 'steps' },
+        h('li', {}, h('strong', {}, 'Home Screen widget: '), 'press and hold an empty spot on your Home Screen → Edit → Add Widget → Shortcuts → choose Brain Dump.'),
+        h('li', {}, h('strong', {}, 'Control Centre / Lock Screen (iOS 18): '), 'open Control Centre → + → Add a Control → Shortcut → Brain Dump.'),
+        h('li', {}, h('strong', {}, 'Double-tap the back of the phone: '), 'Settings → Accessibility → Touch → Back Tap → Double Tap → Brain Dump.'),
+        h('li', {}, h('strong', {}, 'Action Button (iPhone 15 Pro and newer): '), 'Settings → Action Button → Shortcut → Brain Dump.'),
+        h('li', {}, h('strong', {}, 'Siri: '), 'say “Hey Siri, Brain Dump”.'))),
+    h('section', { class: 'card' }, h('h2', {}, 'The first time you run it'),
+      h('p', {}, 'Your iPhone asks whether Brain Dump may use dictation and whether it may connect to your Brain Dump address. Choose Allow, then Always Allow, so it doesn’t ask again.'),
+      h('p', { class: 'empty' }, 'If Brain Dump asks you a question back (like “What time?”), run the Shortcut again within 10 minutes to answer.')),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// "Finish setting up" checklist on the Home screen
+// ---------------------------------------------------------------------------
+
+let setup = null;
+async function refreshSetup() {
+  if (LOCAL) return;
+  try {
+    setup = await api('/api/setup');
+  } catch {
+    setup = null;
+  }
+  if (route() === 'home') renderHomeCards();
+}
+
+function setupCard() {
+  if (LOCAL || !setup) return null;
+  let hidden = false;
+  try { hidden = localStorage.getItem('bd.setupHidden') === 'yes'; } catch {}
+  const items = [];
+  if (isIOS() && !isStandalone()) {
+    items.push({ label: 'Add Brain Dump to your Home Screen', detail: 'Tap Share (the square with an arrow), then “Add to Home Screen”. Open it from there from now on.' });
+  }
+  if (!setup.push && (!isIOS() || isStandalone())) items.push({ label: 'Turn on reminders', detail: 'So reminders reach you when the app is closed.', action: () => enablePush().then(refreshSetup), cta: 'Turn on' });
+  if (!setup.backupCode) items.push({ label: 'Save a backup code', detail: 'Your way back in if you change phones.', href: '#backup', cta: 'Set up' });
+  if (!setup.shortcutCreated) items.push({ label: 'Talk with one tap', detail: 'A widget or button that listens straight away.', href: '#shortcut', cta: 'Set up' });
+  if (!items.length || hidden) return null;
+  return h('section', { class: 'card setup' }, h('h2', {}, 'Finish setting up'),
+    h('ul', { class: 'list' }, items.map((i) => h('li', {},
+      h('span', { class: 'grow' }, i.label, h('div', { class: 'sub' }, i.detail)),
+      i.href ? h('a', { class: 'btn small', href: i.href }, i.cta) : i.action ? h('button', { class: 'btn small', onclick: i.action }, i.cta) : null))),
+    h('button', { class: 'link', onclick: () => { try { localStorage.setItem('bd.setupHidden', 'yes'); } catch {} renderHomeCards(); } }, 'Hide this'));
+}
+
+// ---------------------------------------------------------------------------
 // Data & boot
 // ---------------------------------------------------------------------------
 
@@ -664,6 +779,8 @@ async function renderRoute() {
   if (r === 'lists') return renderLists();
   if (r === 'settings') return renderSettings();
   if (r === 'history') return renderHistory();
+  if (r === 'backup') return renderBackupScreen();
+  if (r === 'shortcut') return renderShortcutScreen();
   return renderHome();
 }
 
@@ -703,6 +820,7 @@ async function boot() {
   }
   await flushQueue().then((replies) => replies.length && toast(`Sorted ${replies.length} thing${replies.length > 1 ? 's' : ''} you captured offline.`));
   refreshOverview();
+  refreshSetup();
   closeStream();
   closeStream = openStream(async (type, data) => {
     if (type === 'sync' && data.version !== ui.version) {

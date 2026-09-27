@@ -176,3 +176,18 @@ body.mini .convo .bubble { font-size: 14px; }
 .mono { font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
 
 input.plain { border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 12px; font-size: 17px; text-align: center; }
+
+.back { display: inline-block; margin: 4px 0 8px; text-decoration: none; font-weight: 600; }
+.screen-title { font-size: 26px; letter-spacing: -.02em; margin: 0 0 8px; text-wrap: balance; }
+.btn.big { display: block; width: 100%; padding: 14px 18px; font-size: 17px; text-align: center; text-decoration: none; margin-top: 8px; }
+a.btn { text-decoration: none; display: inline-block; }
+.steps.big li { padding: 4px 0; }
+.steps.big strong { font-weight: 650; }
+.linkbox { background: var(--surface-2); border-radius: 12px; padding: 10px 12px; margin: 8px 0; user-select: all; -webkit-user-select: all; }
+.chips.center { justify-content: center; }
+.error { color: var(--warn); }
+.link { background: none; border: 0; color: var(--muted); text-decoration: underline; padding: 8px 0 0; font-size: 14px; }
+.card.setup { border: 1px solid var(--accent-soft); }
+
+.brand { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.card > p + p, .card > p + div, .card > div + p { margin-top: 10px; }

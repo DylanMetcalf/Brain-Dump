@@ -20,7 +20,7 @@ describe('everyday phone actions', () => {
     ['Set an alarm for 7am', 'alarm'],
     ['Wake me up at 6:30', 'alarm'],
     ['Play some jazz', 'music', { query: 'jazz' }],
-    ['Put on Taylor Swift on Spotify', 'music', { query: 'taylor swift', service: 'spotify' }],
+    ['Put on Taylor Swift on Spotify', 'music', { query: 'Taylor Swift', service: 'spotify' }],
     ['Play tennis on Saturday at 10', 'event_add'],
     ['Check my emails', 'check_email'],
     ['Any new emails?', 'check_email'],

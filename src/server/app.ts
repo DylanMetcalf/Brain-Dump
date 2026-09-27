@@ -23,7 +23,8 @@ import { integrationRoutes, providersFor, IntegrationConfig } from './integratio
 import { makeAskClaude, verifyKey } from './claude.js';
 import type { AskClaude } from '../core/assist.js';
 import { isValidSubscription, PushSender, PushSubscriptionRecord } from './push.js';
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
+import { zonedToUtc, formatWhen as fmtWhen } from '../core/time.js';
 
 export interface AppOptions {
   dataDir: string;
@@ -45,6 +46,8 @@ export interface AppOptions {
   push?: { publicKey: string; send: PushSender };
   corsOrigins?: string[];
   fetchImpl?: typeof fetch;
+  /** New accounts allowed per IP per minute (default 10). */
+  registrationsPerMinute?: number;
 }
 
 export interface App {
@@ -172,7 +175,7 @@ export async function createApp(opts: AppOptions): Promise<App> {
   route('GET', '/api/auth/config', false, async () => ({ inviteRequired: !!opts.signupCode, push: !!opts.push }));
 
   route('POST', '/api/auth/register', false, async (c) => {
-    limit(`reg:${c.ip}`, 10, 60_000);
+    limit(`reg:${c.ip}`, opts.registrationsPerMinute ?? 10, 60_000);
     if (opts.signupCode) {
       const given = String(c.body?.inviteCode ?? '').trim().toLowerCase();
       if (!given || !safeEqual(hashToken(given), hashToken(opts.signupCode.trim().toLowerCase()))) {
@@ -426,6 +429,72 @@ export async function createApp(opts: AppOptions): Promise<App> {
     }),
   );
 
+  // ---- Quick add (no talking needed) ----
+  route('POST', '/api/create/:kind', true, async (c) =>
+    withAssistant(c.device!.userId, async (a, s) => {
+      const b = c.body ?? {};
+      const tz = s.profile.timeZone;
+      const text = String(b.text ?? b.title ?? b.name ?? '').trim().slice(0, 500);
+      if (!text) throw new HttpError(400, 'Please add some text.');
+      const at = (): Date | undefined => {
+        if (typeof b.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(b.date)) return undefined;
+        const [y, m, d] = b.date.split('-').map(Number);
+        const [hh, mm] = typeof b.time === 'string' && /^\d{2}:\d{2}$/.test(b.time) ? b.time.split(':').map(Number) : [9, 0];
+        return zonedToUtc({ year: y, month: m, day: d, hour: hh, minute: mm }, tz);
+      };
+      const now = clock();
+      let summary = '';
+      let result;
+      switch (c.params.kind) {
+        case 'event': {
+          const start = at();
+          if (!start) throw new HttpError(400, 'Pick a date.');
+          const allDay = !b.time;
+          const dur = Math.max(5, Math.min(24 * 60, Number(b.durationMin) || 60)) * 60000;
+          summary = `Added ${text} ${fmtWhen(start, tz, now, allDay)}`;
+          result = await a.exec.execute({ type: 'calendar.create', event: { title: text, start: start.toISOString(), end: new Date(start.getTime() + (allDay ? 86400000 : dur)).toISOString(), timeZone: tz, allDay, attendees: [] }, summary }, { auto: false, risk: 'low' });
+          break;
+        }
+        case 'reminder': {
+          const due = at();
+          summary = due ? `I'll remind you ${fmtWhen(due, tz, now)}.` : 'Added to your reminders.';
+          result = await a.exec.execute({ type: 'reminder.create', text, dueAt: due?.toISOString(), kind: 'task' }, { auto: false, risk: 'low' });
+          break;
+        }
+        case 'note':
+          summary = 'Saved to your notes.';
+          result = await a.exec.execute({ type: 'note.create', text, idea: false }, { auto: false, risk: 'low' });
+          break;
+        case 'shopping':
+          summary = `Added ${text}.`;
+          result = await a.exec.execute({ type: 'shopping.add', items: text.split(/\s*,\s*/).filter(Boolean).map((name) => ({ name: name.toLowerCase() })) }, { auto: false, risk: 'low' });
+          break;
+        default:
+          throw new HttpError(400, 'Unknown kind');
+      }
+      if (!result.ok) throw new HttpError(500, result.error ?? 'That didn’t work.');
+      s.version += 1;
+      return { ok: true, message: summary, id: result.refs[0]?.id };
+    }),
+  );
+
+  /** A signed, per-event link that iPhone opens as "Add to Calendar". */
+  function eventSig(userId: string, eventId: string) {
+    return createHmac('sha256', key).update(`ics:${userId}:${eventId}`).digest('base64url').slice(0, 32);
+  }
+  route('GET', '/api/events/:id/ics-link', true, async (c) => ({
+    url: `${baseUrl(c)}/api/ics/${c.device!.userId}/${encodeURIComponent(c.params.id)}.ics?sig=${eventSig(c.device!.userId, c.params.id)}`,
+  }));
+  route('GET', '/api/ics/:userId/:file', false, async (c) => {
+    const eventId = c.params.file.replace(/\.ics$/, '');
+    if (!safeEqual(String(c.url.searchParams.get('sig') ?? ''), eventSig(c.params.userId, eventId))) throw new HttpError(404, 'Not found');
+    const s = await store.read(c.params.userId).catch(() => undefined);
+    if (!s?.events.some((e) => e.id === eventId)) throw new HttpError(404, 'Not found');
+    c.res.writeHead(200, { 'Content-Type': 'text/calendar; charset=utf-8', 'Content-Disposition': `inline; filename="event.ics"`, 'Cache-Control': 'no-store' });
+    c.res.end(toICS(s, clock(), eventId));
+    return undefined;
+  });
+
   route('POST', '/api/items/:kind/:id', true, async (c) =>
     withAssistant(c.device!.userId, async (a, s) => {
       // Tap-to-complete on lists; goes through the executor so it is ledgered and undoable.
@@ -441,6 +510,21 @@ export async function createApp(opts: AppOptions): Promise<App> {
               : undefined;
       if (plan) {
         const r = await a.exec.execute(plan as any, { auto: false, risk: 'low' });
+        s.version += 1;
+        return { ok: r.ok };
+      }
+      if (kind === 'note') {
+        const n = s.notes.find((x) => x.id === id);
+        if (!n) throw new HttpError(404, 'Not found');
+        if (action === 'remove') s.notes = s.notes.filter((x) => x.id !== id);
+        else if (action === 'edit' && typeof c.body?.text === 'string' && c.body.text.trim()) n.text = c.body.text.trim().slice(0, 2000);
+        s.version += 1;
+        return { ok: true };
+      }
+      if (kind === 'event') {
+        const e = s.events.find((x) => x.id === id);
+        if (!e) throw new HttpError(404, 'Not found');
+        const r = await a.exec.execute({ type: 'calendar.cancel', id, summary: `Removed ${e.title}` }, { auto: false, risk: 'medium' });
         s.version += 1;
         return { ok: r.ok };
       }
@@ -504,7 +588,8 @@ export async function createApp(opts: AppOptions): Promise<App> {
       idx.feeds = idx.feeds.filter((f) => f.userId !== c.device!.userId);
       idx.feeds.push({ tokenHash: hashToken(token), userId: c.device!.userId, createdAt: clock().toISOString() });
     });
-    return { url: `${baseUrl(c)}/api/calendar.ics?feed=${token}` };
+    const url = `${baseUrl(c)}/api/calendar.ics?feed=${token}`;
+    return { url, webcal: url.replace(/^https?:/, 'webcal:') };
   });
 
   route('GET', '/api/calendar.ics', false, async (c) => {

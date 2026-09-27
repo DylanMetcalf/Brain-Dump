@@ -42,6 +42,7 @@ beforeAll(async () => {
     dataDir: join(dir, 'data'),
     clock: () => clock.now,
     signupCode: 'sage garden',
+    registrationsPerMinute: 1000,
     push: {
       publicKey: 'BPUBLIC',
       send: async (s, payload) => {
@@ -164,5 +165,43 @@ describe('one-link Siri Shortcut', () => {
     const r = await api('/api/ai/test', { token: t, body: {} });
     expect(r.json).toMatchObject({ ok: false });
     expect(r.json.message).toMatch(/ANTHROPIC_API_KEY on Render/);
+  });
+});
+
+describe('quick add, edit and iPhone Calendar', () => {
+  it('adds items without talking, edits and deletes them', async () => {
+    const t = await newUser();
+    const ev = await api('/api/create/event', { token: t, body: { title: 'Pilates', date: '2026-10-02', time: '18:30' } });
+    expect(ev.json.message).toBe('Added Pilates Friday at 6:30 PM');
+    const rem = await api('/api/create/reminder', { token: t, body: { text: 'Renew passport', date: '2026-10-05', time: '09:00' } });
+    expect(rem.json.message).toMatch(/remind you/);
+    const note = await api('/api/create/note', { token: t, body: { text: 'Gate code 4471' } });
+    await api('/api/create/shopping', { token: t, body: { text: 'Oat milk, Bananas' } });
+    let st = (await api('/api/state', { token: t })).json;
+    expect(st.events.find((e: any) => e.title === 'Pilates').start).toBe('2026-10-02T17:30:00.000Z');
+    expect(st.shopping.map((i: any) => i.name)).toEqual(expect.arrayContaining(['oat milk', 'bananas']));
+    await api(`/api/items/note/${note.json.id}`, { token: t, body: { action: 'edit', text: 'Gate code 4472' } });
+    st = (await api('/api/state', { token: t })).json;
+    expect(st.notes[0].text).toBe('Gate code 4472');
+    await api(`/api/items/note/${note.json.id}`, { token: t, body: { action: 'remove' } });
+    await api(`/api/items/event/${ev.json.id}`, { token: t, body: { action: 'remove' } });
+    st = (await api('/api/state', { token: t })).json;
+    expect(st.notes).toHaveLength(0);
+    expect(st.events.find((e: any) => e.id === ev.json.id).status).toBe('cancelled');
+    expect((await api('/api/create/event', { token: t, body: { title: 'x' } })).status).toBe(400);
+  });
+
+  it('gives each event a signed Add-to-Calendar link, and a subscription link', async () => {
+    const t = await newUser();
+    const ev = await api('/api/create/event', { token: t, body: { title: 'Dinner', date: '2026-10-03', time: '19:00' } });
+    const { url } = (await api(`/api/events/${ev.json.id}/ics-link`, { token: t })).json;
+    const res = await fetch(url.replace(/^https?:\/\/[^/]+/, base));
+    expect(res.headers.get('content-type')).toMatch(/text\/calendar/);
+    const body = await res.text();
+    expect(body).toMatch(/SUMMARY:Dinner/);
+    expect(body.match(/BEGIN:VEVENT/g)).toHaveLength(1);
+    expect((await fetch(url.replace(/^https?:\/\/[^/]+/, base).replace(/sig=[^&]+/, 'sig=forged'))).status).toBe(404);
+    const feed = (await api('/api/calendar/feed', { token: t, body: {} })).json;
+    expect(feed.webcal).toMatch(/^webcal:\/\//);
   });
 });

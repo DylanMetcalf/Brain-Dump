@@ -390,3 +390,24 @@ describe('knows when NOT to act', () => {
     expect(msg.sent).toHaveLength(0);
   });
 });
+
+describe('first use', () => {
+  it('a brand-new user can ignore the setup questions and just ask for things', async () => {
+    const h = setup({ onboarded: false });
+    const r0 = await h.a.start({ now: h.clock.now });
+    h.sessionId = r0.sessionId;
+    const r1 = await h.say('Add dinner with Sarah Friday at 7pm');
+    expect(r1.text).not.toMatch(/call me/);
+    expect(h.state.events).toHaveLength(1);
+    const r2 = await h.say('Set a timer for 10 minutes');
+    expect(r2.text).not.toMatch(/call me/);
+    expect(h.state.reminders.some((r) => r.kind === 'timer')).toBe(true);
+  });
+  it('the very first message can be a task, with no greeting first', async () => {
+    const h = setup({ onboarded: false });
+    const r = await h.say('Remind me to call the dentist tomorrow at 9');
+    expect(r.text).not.toMatch(/call me\?/);
+    expect(h.state.reminders).toHaveLength(1);
+    expect(h.state.profile.onboarding).toBe('done');
+  });
+});

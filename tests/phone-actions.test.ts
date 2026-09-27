@@ -50,7 +50,7 @@ describe('phone actions a real person asks for', () => {
   it('music opens the right app and remembers the preferred one', async () => {
     const h = setup();
     const r = await h.say('Play Taylor Swift on Spotify');
-    expect(r.links).toEqual([{ label: 'Play in Spotify', url: 'https://open.spotify.com/search/taylor%20swift' }]);
+    expect(r.links).toEqual([{ label: 'Play in Spotify', url: 'https://open.spotify.com/search/Taylor%20Swift' }]);
     const r2 = await h.say('Play some jazz');
     expect(r2.links.map((l) => l.label)).toEqual(['Play in Spotify']);
   });

@@ -217,7 +217,8 @@ export class Assistant {
         this.askOnboardingName(t);
         return this.finish(t, req);
       }
-      this.askOnboardingName(t, false);
+      // They went straight to asking for things: don't make them name me first.
+      this.skipOnboarding(t);
     }
 
     if (!thoughts.length) {
@@ -587,7 +588,7 @@ export class Assistant {
   // =========================================================================
 
   private askOnboardingName(t: TurnCtx, _immediate = true) {
-    this.ask(t, { kind: 'onboarding', text: 'What would you like to call me?', optional: false, data: { step: 'name', needText: 'Choose a name for me.' } });
+    this.ask(t, { kind: 'onboarding', text: 'What would you like to call me?', optional: true, data: { step: 'name', needText: 'Choose a name for me.' } });
   }
 
   private askOnboardingPermissions(t: TurnCtx) {
@@ -607,7 +608,7 @@ export class Assistant {
     if (q.data.step === 'name') {
       const name = th.kind === 'rename' ? th.name : extractName(th.raw);
       if (!name) {
-        q.asked = false; // re-ask after handling whatever they said
+        this.skipOnboarding(t); // they'd rather get on with it; the name can wait
         return false;
       }
       this.removeQuestion(t.session, q);
@@ -621,7 +622,7 @@ export class Assistant {
       const yes = th.kind === 'yes' || th.raw === 'option:yes';
       const no = th.kind === 'no' || th.raw === 'option:no';
       if (!yes && !no) {
-        q.asked = false;
+        this.skipOnboarding(t);
         return false;
       }
       this.removeQuestion(t.session, q);
@@ -635,6 +636,18 @@ export class Assistant {
       return true;
     }
     return false;
+  }
+
+  /**
+   * Onboarding never blocks real requests. Someone who ignores the setup questions gets
+   * everyday permissions (calendar, reminders, lists, notes; messages are drafted, never
+   * sent on their own) and what they asked for is done straight away.
+   */
+  private skipOnboarding(t: TurnCtx) {
+    t.session.pending = t.session.pending.filter((q) => q.kind !== 'onboarding');
+    if (this.state.profile.onboarding === 'done') return;
+    this.state.profile.onboarding = 'done';
+    grantEverydayPermissions(this.state, 'onboarding', t.now);
   }
 
   private setAssistantName(name: string, t: TurnCtx) {

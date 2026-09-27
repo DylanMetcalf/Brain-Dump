@@ -22,11 +22,11 @@ function fold(line: string): string {
   return out.join('\r\n');
 }
 
-export function toICS(state: UserState, now: Date): string {
+export function toICS(state: UserState, now: Date, onlyId?: string): string {
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Brain Dump//EN', 'CALSCALE:GREGORIAN', `X-WR-CALNAME:${esc(`${state.profile.assistantName ?? 'Brain Dump'} — Brain Dump`)}`];
   const since = now.getTime() - 30 * 86400000;
   for (const e of state.events) {
-    if (e.source !== 'local' || Date.parse(e.end) < since) continue;
+    if (onlyId ? e.id !== onlyId : e.source !== 'local' || Date.parse(e.end) < since) continue;
     lines.push('BEGIN:VEVENT');
     lines.push(`UID:${e.id}@braindump`);
     lines.push(`DTSTAMP:${stamp(e.updatedAt)}`);

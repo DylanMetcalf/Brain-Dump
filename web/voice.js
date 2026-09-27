@@ -1,7 +1,9 @@
-// Voice session: TAP → TALK → CONTINUE → FINISH.
-// Uses the browser's own speech recognition and synthesis, only after an explicit tap.
-// When the OS suspends the microphone (app switched, screen locked) the conversation
-// stays open on the server; listening resumes when the user comes back.
+// Voice: tap, talk as long as you like, and stop. Brain Dump waits for a natural pause
+// (about two seconds of quiet) before it treats what you said as one thought, then
+// answers. It only listens again if it asked you something. No "that's all" needed.
+//
+// Works with the browser's own speech recognition, started only by a tap. When the
+// phone takes the microphone away (you switch apps), nothing you said is lost.
 
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -10,26 +12,29 @@ export const ttsSupported = 'speechSynthesis' in window;
 
 /**
  * @param {object} h
- * @param {(text: string) => Promise<{text: string, settled: boolean, sessionEnded: boolean}>} h.onUtterance
+ * @param {(text: string) => Promise<{text: string, question?: object, sessionEnded?: boolean}>} h.onUtterance
  * @param {(state: 'idle'|'listening'|'thinking'|'speaking', note?: string) => void} h.onState
- * @param {(text: string) => void} h.onInterim
+ * @param {(text: string) => void} h.onTranscript  live words while listening
  * @param {() => boolean} h.speakReplies
  */
 export function createVoice(h) {
+  const PAUSE_MS = 2000; // quiet after speech = you're done
+  const NOTHING_SAID_MS = 9000; // tapped but said nothing
   let rec = null;
-  let active = false; // the user has an open voice session
-  let busy = false; // waiting for the server or speaking
+  let active = false;
+  let busy = false;
+  let carried = ''; // words from earlier recognition runs in this turn (browsers restart often)
+  let finalText = ''; // finished words in the current run
+  let interim = '';
+  let pauseTimer = null;
   let silenceTimer = null;
-  let lastSettled = true;
-  let resumeOnReturn = false;
-  let restarts = 0;
+  let heardAnything = false;
 
-  const SETTLED_SILENCE_MS = 9000; // nothing pending: close after a short quiet spell
-  const OPEN_SILENCE_MS = 45000; // a question is pending: give the user time
+  const transcript = () => `${carried} ${finalText} ${interim}`.replace(/\s+/g, ' ').trim();
 
-  function armSilence() {
+  function clearTimers() {
+    clearTimeout(pauseTimer);
     clearTimeout(silenceTimer);
-    silenceTimer = setTimeout(() => stop('quiet'), lastSettled ? SETTLED_SILENCE_MS : OPEN_SILENCE_MS);
   }
 
   function build() {
@@ -38,80 +43,89 @@ export function createVoice(h) {
     r.continuous = true;
     r.interimResults = true;
     r.maxAlternatives = 1;
-    r.onresult = async (e) => {
-      let interim = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
+    r.onresult = (e) => {
+      // Rebuild from the whole result list: some browsers (iOS) resend earlier results.
+      let fin = '';
+      let inter = '';
+      for (let i = 0; i < e.results.length; i++) {
         const res = e.results[i];
-        const text = res[0].transcript.trim();
-        if (!res.isFinal) {
-          interim += text + ' ';
-          continue;
-        }
-        // Noise handling: ignore near-empty or very low-confidence fragments.
-        if (text.length < 2 || (res[0].confidence > 0 && res[0].confidence < 0.25)) continue;
-        h.onInterim('');
-        await handleFinal(text);
+        const text = res[0].transcript;
+        if (res.isFinal) fin += ` ${text}`;
+        else inter += ` ${text}`;
       }
-      if (interim) {
-        h.onInterim(interim.trim());
-        armSilence();
+      finalText = fin.trim();
+      interim = inter.trim();
+      if (transcript()) {
+        heardAnything = true;
+        clearTimeout(silenceTimer);
+        h.onTranscript(transcript());
+        clearTimeout(pauseTimer);
+        pauseTimer = setTimeout(finishTurn, PAUSE_MS);
       }
     };
     r.onerror = (e) => {
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-        active = false;
-        h.onState('idle', 'Microphone access is off — you can type instead, or allow the microphone in your browser settings.');
+        stop();
+        h.onState('idle', 'Microphone access is off. Allow it for this app in your iPhone Settings, or type instead.');
       } else if (e.error === 'network') {
-        h.onState('idle', "Voice recognition needs a connection — type instead and I'll save it.");
-        active = false;
+        stop();
+        h.onState('idle', 'Voice needs a connection right now. Type instead and I’ll keep it.');
       }
-      // 'no-speech' and 'aborted' are recovered by onend.
+      // "no-speech" and "aborted" are handled by onend.
     };
     r.onend = () => {
-      // Browsers end recognition periodically; keep the session going while it's active.
-      if (active && !busy && document.visibilityState === 'visible') {
-        if (restarts++ < 50) setTimeout(() => safeStart(), 250);
-      }
+      // Browsers stop recognition every so often. Keep what was said and carry on.
+      if (!active || busy) return;
+      carried = `${carried} ${finalText} ${interim}`.trim();
+      finalText = '';
+      interim = '';
+      if (document.visibilityState === 'visible') setTimeout(listen, 150);
     };
     return r;
   }
 
-  function safeStart() {
+  function listen() {
     if (!active || busy) return;
     try {
-      rec = rec ?? build();
+      rec = build();
       rec.start();
       h.onState('listening');
     } catch {
-      /* already started */
+      /* already running */
     }
   }
 
-  async function handleFinal(text) {
+  async function finishTurn() {
+    if (!active || busy) return;
+    const text = transcript();
+    clearTimers();
+    if (!text) return;
     busy = true;
     try {
       rec?.stop();
     } catch {}
+    carried = '';
+    finalText = '';
+    interim = '';
+    h.onTranscript('');
     h.onState('thinking');
     let reply;
     try {
       reply = await h.onUtterance(text);
     } catch {
       busy = false;
-      h.onState('listening', "Sorry — something went wrong. Say that again?");
-      safeStart();
+      stop();
+      h.onState('idle', 'Something went wrong — tap to try again.');
       return;
     }
-    lastSettled = !!reply?.settled;
     if (reply?.text && h.speakReplies()) await speak(reply.text);
     busy = false;
-    if (reply?.sessionEnded) {
-      stop('ended');
-      return;
-    }
-    restarts = 0;
-    safeStart();
-    armSilence();
+    // Only keep listening when Brain Dump asked something.
+    if (reply?.question && !reply.sessionEnded && active) {
+      heardAnything = false;
+      listen();
+      silenceTimer = setTimeout(() => !heardAnything && stop(), NOTHING_SAID_MS * 2);
+    } else stop();
   }
 
   function speak(text) {
@@ -124,64 +138,64 @@ export function createVoice(h) {
       u.onend = u.onerror = () => resolve();
       speechSynthesis.cancel();
       speechSynthesis.speak(u);
+      // Safety net: some browsers never fire onend.
+      setTimeout(resolve, Math.min(20000, 1500 + text.length * 70));
     });
   }
 
   function start() {
     if (!voiceSupported) return false;
+    if (ttsSupported) speechSynthesis.cancel();
     active = true;
-    lastSettled = true;
-    restarts = 0;
-    safeStart();
-    armSilence();
+    busy = false;
+    carried = '';
+    finalText = '';
+    interim = '';
+    heardAnything = false;
+    listen();
+    silenceTimer = setTimeout(() => !heardAnything && stop('nothing'), NOTHING_SAID_MS);
     return true;
   }
 
-  function stop(reason = 'user') {
+  function stop(reason) {
     active = false;
-    busy = false;
-    clearTimeout(silenceTimer);
+    clearTimers();
     try {
       rec?.abort();
     } catch {}
-    if (ttsSupported) speechSynthesis.cancel();
-    h.onInterim('');
-    h.onState('idle', reason === 'quiet' ? 'Paused — tap to keep talking.' : undefined);
+    h.onTranscript('');
+    h.onState('idle', reason === 'nothing' ? 'I didn’t hear anything — tap when you’re ready.' : undefined);
   }
 
-  /** Tap while speaking = interrupt and listen. */
-  function interrupt() {
+  /** Tap while listening: send what you've said now. Tap while speaking: stop talking. */
+  function tap() {
     if (ttsSupported && speechSynthesis.speaking) {
       speechSynthesis.cancel();
-      return true;
+      return 'interrupted';
     }
-    return false;
+    if (active && !busy) {
+      if (transcript()) {
+        finishTurn();
+        return 'sent';
+      }
+      stop();
+      return 'stopped';
+    }
+    return start() ? 'started' : 'unsupported';
   }
 
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
-      // The OS takes the microphone away; the conversation stays open server-side.
-      if (active) {
-        resumeOnReturn = true;
-        clearTimeout(silenceTimer);
-        try {
-          rec?.abort();
-        } catch {}
-      }
-    } else if (resumeOnReturn) {
-      resumeOnReturn = false;
-      if (active) {
-        h.onState('listening', "I'm still here — carry on.");
-        safeStart();
-        armSilence();
-      }
+    if (document.visibilityState === 'hidden' && active && !busy) {
+      // The phone takes the microphone away: send what was said rather than lose it.
+      if (transcript()) finishTurn();
+      else stop();
     }
   });
 
   return {
+    tap,
     start,
     stop,
-    interrupt,
     speak,
     get active() {
       return active;

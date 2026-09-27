@@ -520,7 +520,7 @@ const MATCHERS: Matcher[] = [
     if (!m) return undefined;
     if (parseWhen(m[1], new Date(0), 'UTC').found) return undefined; // "play tennis on Saturday at 10" is an event
     if (/\b(list|calendar|diary|reminder)\b/.test(m[1])) return undefined;
-    return { kind: 'music', raw: o, query: m[1].replace(/^(?:some|the)\s+/, ''), service: m[2] };
+    return { kind: 'music', raw: o, query: keepCase(m[1].replace(/^(?:some|the)\s+/, ''), o), service: m[2] };
   },
 
   // Email check: "check my emails", "any new emails?", "did I get an email from Rick?"
@@ -768,7 +768,7 @@ const MATCHERS: Matcher[] = [
     if (explicit) {
       const text = `${explicit[1]} ${explicit[2]}`;
       const when = w(text, { now: new Date(0), timeZone: 'UTC' });
-      return { kind: 'event_add', raw: o, title: tidyTitle(when.rest), when, explicitCalendar: true };
+      return { kind: 'event_add', raw: o, title: keepCase(tidyTitle(when.rest), o), when, explicitCalendar: true };
     }
     const have = t.match(/^(?:i(?:'ve| have)?|we(?:'ve| have)?) (?:got |have )?(?:a |an |my |the |our )?(.+)$/);
     const body = have ? have[1] : t;
@@ -776,7 +776,8 @@ const MATCHERS: Matcher[] = [
     const looksLikeEvent =
       (when.date || when.weekday !== undefined) && when.time && !/^(?:need|to|should|must|want|forgot|can)\b/.test(body) && when.rest.split(' ').length <= 6 && when.rest.length > 1;
     if (looksLikeEvent && !/^(?:buy|get|pick up|call|email|message|text|reply|tell)\b/.test(when.rest)) {
-      return { kind: 'event_add', raw: o, title: tidyTitle(when.rest.replace(/^(?:got|have|a|an|my|the)\s+/, '')), when, explicitCalendar: false };
+      const title = when.rest.replace(/^(?:add|put|schedule|pencil in|book in|plan|set up|create|make)\s+(?:an? )?(?:(?:event|appointment) (?:for |called )?)?/, '').replace(/^(?:got|have|a|an|my|the)\s+/, '');
+      return { kind: 'event_add', raw: o, title: keepCase(tidyTitle(title), o), when, explicitCalendar: false };
     }
     return undefined;
   },
@@ -853,6 +854,17 @@ const MATCHERS: Matcher[] = [
 function capitalizeFirst(s: string): string {
   const x = s.trim().replace(/[.]+$/, '');
   return x ? x[0].toUpperCase() + x.slice(1) : x;
+}
+
+/** Matching works on lower case; put back the capitals the person used ("Sarah", "Taylor Swift", "NHS"). */
+export function keepCase(s: string, original: string): string {
+  const words = original.split(/\s+/).slice(1); // the first word is only capitalised because it starts the sentence
+  const cased = new Map<string, string>();
+  for (const w of words) {
+    const clean = w.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9']+$/g, '');
+    if (/[A-Z]/.test(clean)) cased.set(clean.toLowerCase(), clean);
+  }
+  return s.replace(/[A-Za-z0-9']+/g, (w) => cased.get(w.toLowerCase()) ?? w);
 }
 
 function tidyTitle(s: string): string {

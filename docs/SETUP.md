@@ -93,3 +93,19 @@ The first time it runs, allow dictation and choose **Always Allow** for connecti
 | **Backups** | Render snapshots disks daily. **Settings → Export everything** gives each person their own copy. |
 | **Messages** | WhatsApp and text messages are drafted, then opened in WhatsApp or Messages for you to send. It never sends by itself unless an integration that can send is connected and you allow it. |
 | **Privacy** | Everything is encrypted on the server. The microphone is only used when you tap. Claude only sees the individual sentences the app couldn't understand. |
+
+## What it can do on an iPhone, honestly
+
+| You say | What happens |
+|---|---|
+| "Dinner with Sarah Friday at 7" | Added to Brain Dump's calendar (and Google Calendar if connected). Tap the event → **Add to iPhone Calendar**, or subscribe once in Settings → Connections → iPhone Calendar. |
+| "Remind me to call the dentist tomorrow at 9" | Reminder, sent as a notification (turn notifications on in Settings). |
+| "Make a note that the wifi password is sunflower22" | Saved under Organise → Notes. |
+| "Set a timer for 10 minutes" / "Wake me at 6:30" | Notification when it's due. It can't set the Clock app's alarm; that needs a native app. |
+| "Send a WhatsApp to my mum saying I'll be late" | Message written; one tap opens WhatsApp with it filled in. Tell it her number once. |
+| "Call Mum" | One tap to call, FaceTime or WhatsApp. |
+| "Play some Taylor Swift" | One tap opens Spotify or Apple Music on that search. |
+| "Check my email" | Reads Gmail once Google is connected (see above). |
+| "My Zoom link is …" | Remembered, and added to meetings it sets up. |
+
+A web app can't open or control other apps in the background on iPhone; Apple doesn't allow it. That's why messages, calls and music take one tap to finish. Writing to Apple Calendar, Reminders and Notes directly, a real Clock alarm, and a Home Screen widget would all need a native App Store app (an Apple Developer account, $99/year).

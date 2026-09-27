@@ -23,6 +23,8 @@ interface AccountIndex {
   devices: DeviceRecord[];
   /** Read-only calendar feed tokens (hashed). */
   feeds: { tokenHash: string; userId: string; createdAt: string }[];
+  /** Backup codes (hashed) that let a user sign in on a new device. One per user. */
+  recovery?: { codeHash: string; userId: string; createdAt: string }[];
 }
 
 export async function loadOrCreateKey(dataDir: string, envKey?: string): Promise<Buffer> {
@@ -80,6 +82,10 @@ export class Store {
 
   get feeds() {
     return this.index.feeds;
+  }
+
+  get recovery() {
+    return this.index.recovery ?? [];
   }
 
   async mutateIndex(fn: (idx: AccountIndex) => void): Promise<void> {
@@ -148,6 +154,7 @@ export class Store {
     await this.mutateIndex((idx) => {
       idx.devices = idx.devices.filter((d) => d.userId !== userId);
       idx.feeds = idx.feeds.filter((f) => f.userId !== userId);
+      idx.recovery = (idx.recovery ?? []).filter((r) => r.userId !== userId);
     });
   }
 

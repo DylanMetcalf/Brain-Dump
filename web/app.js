@@ -200,6 +200,8 @@ function renderHomeCards() {
   const box = document.getElementById('cards');
   if (!box || !ui.overview || MINI) return;
   box.replaceChildren();
+  const hint = installHint();
+  if (hint) box.append(hint);
   const o = ui.overview;
   if (o.needsMe.items.length) {
     box.append(h('section', { class: 'card' }, h('h2', {}, 'Needs you'), h('ul', { class: 'list' }, o.needsMe.items.slice(0, 6).map((i) => h('li', {}, h('span', { class: 'grow' }, i.text))))));
@@ -355,7 +357,7 @@ async function renderSettings() {
       h('div', { class: 'row' }, h('label', {}, '“Clear” emails means'), select(p.preferences.clearMeans, { archive: 'Archive (undoable)', delete: 'Delete' }, (v) => patchProfile({ preferences: { clearMeans: v } }))),
       h('div', { class: 'row' }, h('label', {}, 'Remind me before events (min)'), h('input', { type: 'number', min: 0, max: 240, value: p.preferences.defaultEventLeadMin, onchange: (e) => patchProfile({ preferences: { defaultEventLeadMin: Number(e.target.value) } }) })),
       h('div', { class: 'row' }, h('label', {}, 'Sunday briefing'), select(String(p.preferences.weeklyBriefing.enabled), { true: 'On', false: 'Off' }, (v) => patchProfile({ preferences: { weeklyBriefing: { ...p.preferences.weeklyBriefing, enabled: v === 'true' } } }))),
-      LOCAL ? null : h('div', { class: 'row' }, h('label', {}, 'Notifications on this device'), h('button', { class: 'btn ghost small', onclick: async () => { const r = await Notification.requestPermission(); toast(r === 'granted' ? 'Notifications on.' : 'Notifications are off.'); } }, 'Allow'))),
+      LOCAL ? null : h('div', { class: 'row' }, h('label', {}, 'Notifications on this phone', h('div', { class: 'sub' }, 'Reminders arrive even when the app is closed.')), h('button', { class: 'btn ghost small', onclick: enablePush }, 'Turn on'))),
 
     h('section', { class: 'card' }, h('h2', {}, 'What I can do'),
       h('p', { class: 'empty' }, 'I only act within what you allow. Anything involving money, or that can’t be undone, always comes back to you.'),
@@ -395,6 +397,9 @@ async function renderSettings() {
         : h('p', { class: 'empty' }, 'This server has no Google credentials configured. Your Brain Dump calendar can still be subscribed to from any calendar app:'),
       h('div', { class: 'chips' }, h('button', { class: 'chip', onclick: async () => { const r = await api('/api/calendar/feed', { body: {} }); prompt('Subscribe to this private calendar link in Apple/Google/Outlook Calendar:', r.url.startsWith('http') ? r.url : location.origin + r.url); } }, 'Calendar subscription link'))),
 
+    LOCAL ? null : h('section', { class: 'card' }, h('h2', {}, 'Backup code'),
+      h('p', { class: 'empty' }, 'There’s no password. If you lose this phone or clear its data, a backup code gets you back in. Keep it somewhere safe, like your Notes or password manager.'),
+      backupBox()),
     LOCAL ? null : h('section', { class: 'card' }, h('h2', {}, 'Devices'),
       h('ul', { class: 'list' }, devices.devices.map((d) => h('li', {}, h('span', { class: 'grow' }, d.name, d.current ? ' (this device)' : '', h('div', { class: 'sub' }, `last seen ${new Date(d.lastSeenAt).toLocaleString()}`)),
         !d.current ? h('button', { class: 'btn ghost small', onclick: async () => { await api(`/api/devices/${d.id}`, { method: 'DELETE' }); renderSettings(); } }, 'Remove') : null))),
@@ -412,6 +417,69 @@ async function renderSettings() {
     nav(),
   );
   renderTop();
+}
+
+function backupBox() {
+  const out = h('div');
+  const show = (exists) => out.replaceChildren(
+    exists ? h('p', { class: 'empty' }, 'You have a backup code. Making a new one replaces it.') : null,
+    h('button', { class: 'btn ghost small', onclick: async () => {
+      const r = await api('/api/auth/recovery', { body: {} });
+      out.replaceChildren(h('div', { class: 'code' }, r.code), h('p', { class: 'empty' }, 'Write this down or save it now — it won’t be shown again.'),
+        h('button', { class: 'btn ghost small', onclick: async (e) => { try { await navigator.clipboard.writeText(r.code); e.target.textContent = 'Copied'; } catch { e.target.textContent = 'Select and copy it'; } } }, 'Copy'));
+    } }, exists ? 'Make a new backup code' : 'Create backup code'));
+  api('/api/auth/recovery').then((r) => show(r.exists)).catch(() => show(false));
+  return out;
+}
+
+function urlBase64ToUint8Array(base64) {
+  const padding = '='.repeat((4 - (base64.length % 4)) % 4);
+  const raw = atob((base64 + padding).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+function isIOS() {
+  return /iPhone|iPad|iPod/.test(navigator.userAgent);
+}
+
+function isStandalone() {
+  return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+}
+
+async function enablePush() {
+  if (isIOS() && !isStandalone()) {
+    toast('On iPhone, first add Brain Dump to your Home Screen (Share → Add to Home Screen), open it from there, then turn notifications on.', [], 12000);
+    return;
+  }
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    toast('This browser can’t receive notifications.');
+    return;
+  }
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      toast('Notifications are off. You can allow them in your phone’s settings.');
+      return;
+    }
+    const { publicKey } = await api('/api/push/key');
+    const reg = await navigator.serviceWorker.ready;
+    const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) }));
+    await api('/api/push/subscribe', { body: { subscription: sub.toJSON() } });
+    await api('/api/push/test', { body: {} });
+    toast('Notifications are on. You should see a test one now.');
+  } catch (err) {
+    toast(`Couldn’t turn on notifications: ${err.message}`);
+  }
+}
+
+function installHint() {
+  let dismissed = false;
+  try { dismissed = localStorage.getItem('bd.installHint') === 'no'; } catch {}
+  if (LOCAL || isStandalone() || dismissed || !isIOS()) return null;
+  const card = h('section', { class: 'card' }, h('h2', {}, 'Make it an app'),
+    h('p', {}, 'Tap the Share button, then “Add to Home Screen”. Brain Dump then opens like an app and can send you reminders.'),
+    h('div', { class: 'chips' }, h('button', { class: 'chip', onclick: () => { try { localStorage.setItem('bd.installHint', 'no'); } catch {} card.remove(); } }, 'Got it')));
+  return card;
 }
 
 function claudeCard(ai) {
@@ -462,8 +530,9 @@ function oneTapCard() {
         h('ol', { class: 'steps' },
           h('li', {}, 'Open the Shortcuts app and tap +. Name it “Brain Dump”.'),
           h('li', {}, 'Add “Dictate Text”.'),
-          h('li', {}, 'Add “Get Contents of URL”. Set the URL below, Method: POST, Request Body: File, and choose Dictated Text.'),
-          h('li', {}, 'Under Headers add: Authorization = Bearer followed by the key below, and Content-Type = text/plain.'),
+          h('li', {}, 'Add “Get Contents of URL” and paste the URL below. Tap the arrow to show more: Method → POST.'),
+          h('li', {}, 'Headers → Add new header: Key “Authorization”, Value: the key below (starting with Bearer).'),
+          h('li', {}, 'Request Body → JSON → Add new field → Text. Key: “text”. Value: choose Dictated Text.'),
           h('li', {}, 'Add “Speak Text” with Contents of URL.'),
           h('li', {}, 'Assign it to the Action Button (Settings → Action Button → Shortcut), Back Tap (Settings → Accessibility → Touch → Back Tap), or add it as a widget.')),
         h('div', { class: 'row' }, h('label', {}, 'URL', h('div', { class: 'sub mono' }, url)), copy(url)),
@@ -530,30 +599,42 @@ function deviceLabel() {
   return 'Browser';
 }
 
-function renderWelcome() {
-  const codeInput = h('input', { inputmode: 'numeric', maxlength: 6, placeholder: '000000', 'aria-label': 'Pairing code' });
-  const pairForm = h('form', { class: 'stack', hidden: true, onsubmit: async (e) => {
+async function renderWelcome() {
+  const config = await api('/api/auth/config').catch(() => ({}));
+  const msg = h('p', { class: 'empty', 'aria-live': 'polite' });
+  const invite = h('input', { id: 'invite', autocomplete: 'off', placeholder: 'Invite code', 'aria-label': 'Invite code', class: 'plain' });
+  const startForm = h('form', { class: 'stack', onsubmit: async (e) => {
     e.preventDefault();
     try {
-      const r = await api('/api/auth/pair/complete', { body: { code: codeInput.value, deviceName: deviceLabel() } });
+      const r = await api('/api/auth/register', { body: { deviceName: deviceLabel(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, inviteCode: invite.value } });
       auth.token = r.token;
       boot();
     } catch (err) {
-      toast(err.message);
+      msg.textContent = err.message;
     }
-  } }, codeInput, h('button', { class: 'btn', type: 'submit' }, 'Connect this device'));
+  } }, config.inviteRequired ? invite : null, h('button', { class: 'btn', type: 'submit' }, 'Start'));
+  const codeInput = h('input', { id: 'pair', autocomplete: 'off', placeholder: '6-digit code or backup code', 'aria-label': 'Pairing code or backup code', class: 'plain' });
+  const pairForm = h('form', { class: 'stack', hidden: true, onsubmit: async (e) => {
+    e.preventDefault();
+    const code = codeInput.value.trim();
+    const isPairing = /^\d{6}$/.test(code.replace(/\s/g, ''));
+    try {
+      const r = await api(isPairing ? '/api/auth/pair/complete' : '/api/auth/recover', { body: { code, deviceName: deviceLabel() } });
+      auth.token = r.token;
+      boot();
+    } catch (err) {
+      msg.textContent = err.message;
+    }
+  } }, h('p', { class: 'empty' }, 'Enter the 6-digit code from Settings → Devices on your other device, or your backup code.'), codeInput, h('button', { class: 'btn', type: 'submit' }, 'Connect this device'));
   app.replaceChildren(
     h('div', { class: 'onboard' },
       h('h1', {}, 'Get it out of your head.'),
       h('p', {}, 'Tell me what’s on your mind — I’ll help with the rest.'),
+      startForm,
       h('div', { class: 'stack' },
-        h('button', { class: 'btn', onclick: async () => {
-          const r = await api('/api/auth/register', { body: { deviceName: deviceLabel(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone } });
-          auth.token = r.token;
-          boot();
-        } }, 'Start'),
-        h('button', { class: 'btn ghost', onclick: () => { pairForm.hidden = false; codeInput.focus(); } }, 'I already use Brain Dump on another device'),
-        pairForm)),
+        h('button', { class: 'btn ghost', onclick: () => { pairForm.hidden = false; codeInput.focus(); } }, 'I already use Brain Dump'),
+        pairForm),
+      msg),
   );
 }
 

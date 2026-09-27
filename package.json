@@ -19,11 +19,13 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/web-push": "^3.6.4",
     "esbuild": "^0.24.2",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.128.0"
+    "@anthropic-ai/sdk": "^0.128.0",
+    "web-push": "^3.6.7"
   }
 }

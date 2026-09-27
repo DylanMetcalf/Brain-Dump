@@ -22,6 +22,8 @@ import { DeviceRecord, loadOrCreateKey, Store } from './store.js';
 import { integrationRoutes, providersFor, IntegrationConfig } from './integrations.js';
 import { makeAskClaude, verifyKey } from './claude.js';
 import type { AskClaude } from '../core/assist.js';
+import { isValidSubscription, PushSender, PushSubscriptionRecord } from './push.js';
+import { randomBytes } from 'node:crypto';
 
 export interface AppOptions {
   dataDir: string;
@@ -37,6 +39,10 @@ export interface AppOptions {
   /** Test hook: replaces the real Claude call. */
   askClaude?: (userId: string) => AskClaude | undefined;
   tickIntervalMs?: number;
+  /** When set, new accounts need this invite code (so a public server isn't open to strangers). */
+  signupCode?: string;
+  /** Web Push: public VAPID key for browsers, and the sender used by the scheduler. */
+  push?: { publicKey: string; send: PushSender };
   corsOrigins?: string[];
   fetchImpl?: typeof fetch;
 }
@@ -47,6 +53,8 @@ export interface App {
   tickAll(now?: Date): Promise<number>;
   close(): Promise<void>;
 }
+
+type PushPayloadLite = { title: string; body: string; tag?: string };
 
 class HttpError extends Error {
   constructor(public status: number, message: string) {
@@ -109,6 +117,14 @@ export async function createApp(opts: AppOptions): Promise<App> {
     if (r.n > max) throw new HttpError(429, 'Too many requests — try again shortly.');
   }
 
+  /** The address people reach this server at: PUBLIC_URL, or worked out from the request. */
+  function baseUrl(c: Ctx): string {
+    if (opts.publicUrl && !/localhost|127\.0\.0\.1/.test(opts.publicUrl)) return opts.publicUrl.replace(/\/$/, '');
+    const proto = String(c.req.headers['x-forwarded-proto'] ?? '').split(',')[0].trim() || 'http';
+    const host = String(c.req.headers['x-forwarded-host'] ?? c.req.headers.host ?? 'localhost').split(',')[0].trim();
+    return `${proto}://${host}`;
+  }
+
   function broadcast(userId: string, event: string, data: unknown) {
     const set = sse.get(userId);
     if (!set) return;
@@ -153,14 +169,51 @@ export async function createApp(opts: AppOptions): Promise<App> {
   }
 
   // ---- auth ----
+  route('GET', '/api/auth/config', false, async () => ({ inviteRequired: !!opts.signupCode, push: !!opts.push }));
+
   route('POST', '/api/auth/register', false, async (c) => {
     limit(`reg:${c.ip}`, 10, 60_000);
+    if (opts.signupCode) {
+      const given = String(c.body?.inviteCode ?? '').trim().toLowerCase();
+      if (!given || !safeEqual(hashToken(given), hashToken(opts.signupCode.trim().toLowerCase()))) {
+        throw new HttpError(403, 'That invite code isn’t right. Ask the person who set up Brain Dump for it.');
+      }
+    }
     const tz = typeof c.body?.timeZone === 'string' && isValidTimeZone(c.body.timeZone) ? c.body.timeZone : 'UTC';
     const userId = randomId('user');
     await store.create(userId, tz, clock());
     const token = newToken();
     const device = await addDevice(userId, deviceName(c.body?.deviceName), token);
     return { token, userId, deviceId: device.id };
+  });
+
+  /** Create (or replace) this person's backup code. Shown once; store it somewhere safe. */
+  route('POST', '/api/auth/recovery', true, async (c) => {
+    const raw = randomBytes(10).toString('hex').toUpperCase(); // 20 hex chars
+    const code = raw.match(/.{1,5}/g)!.join('-');
+    await store.mutateIndex((idx) => {
+      idx.recovery = (idx.recovery ?? []).filter((r) => r.userId !== c.device!.userId);
+      idx.recovery.push({ codeHash: hashToken(raw), userId: c.device!.userId, createdAt: clock().toISOString() });
+    });
+    return { code };
+  });
+
+  route('GET', '/api/auth/recovery', true, async (c) => {
+    const r = store.recovery.find((x) => x.userId === c.device!.userId);
+    return { exists: !!r, createdAt: r?.createdAt };
+  });
+
+  /** Sign in on a new phone with the backup code. */
+  route('POST', '/api/auth/recover', false, async (c) => {
+    limit(`recover:${c.ip}`, 8, 10 * 60_000);
+    const raw = String(c.body?.code ?? '').replace(/[^0-9a-f]/gi, '').toUpperCase();
+    const h = hashToken(raw);
+    const r = raw.length === 20 ? store.recovery.find((x) => safeEqual(x.codeHash, h)) : undefined;
+    if (!r) throw new HttpError(400, 'That backup code didn’t match. Check it and try again.');
+    const token = newToken();
+    const device = await addDevice(r.userId, deviceName(c.body?.deviceName), token);
+    broadcast(r.userId, 'devices', {});
+    return { token, userId: r.userId, deviceId: device.id };
   });
 
   route('POST', '/api/auth/pair/start', true, async (c) => {
@@ -451,7 +504,7 @@ export async function createApp(opts: AppOptions): Promise<App> {
       idx.feeds = idx.feeds.filter((f) => f.userId !== c.device!.userId);
       idx.feeds.push({ tokenHash: hashToken(token), userId: c.device!.userId, createdAt: clock().toISOString() });
     });
-    return { url: `${opts.publicUrl ?? ''}/api/calendar.ics?feed=${token}` };
+    return { url: `${baseUrl(c)}/api/calendar.ics?feed=${token}` };
   });
 
   route('GET', '/api/calendar.ics', false, async (c) => {
@@ -511,7 +564,7 @@ export async function createApp(opts: AppOptions): Promise<App> {
   route('POST', '/api/auth/shortcut', true, async (c) => {
     const token = newToken();
     const device = await addDevice(c.device!.userId, 'Siri Shortcut', token);
-    return { token, deviceId: device.id, url: `${opts.publicUrl ?? ''}/api/quick` };
+    return { token, deviceId: device.id, url: `${baseUrl(c)}/api/quick` };
   });
 
   /**
@@ -534,6 +587,36 @@ export async function createApp(opts: AppOptions): Promise<App> {
       return undefined;
     }
     return { text: r.text, question: !!r.question, done: r.settled || r.sessionEnded };
+  });
+
+  // ---- Push notifications ----
+  route('GET', '/api/push/key', true, async () => {
+    if (!opts.push) throw new HttpError(404, 'Push notifications are not set up on this server.');
+    return { publicKey: opts.push.publicKey };
+  });
+
+  route('POST', '/api/push/subscribe', true, async (c) => {
+    if (!opts.push) throw new HttpError(404, 'Push notifications are not set up on this server.');
+    const sub = c.body?.subscription;
+    if (!isValidSubscription(sub)) throw new HttpError(400, 'That subscription isn’t valid.');
+    const secrets = await store.readSecrets(c.device!.userId);
+    const list: PushSubscriptionRecord[] = (secrets.push ?? []).filter((x: PushSubscriptionRecord) => x.endpoint !== sub.endpoint && x.deviceId !== c.device!.id);
+    list.push({ endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth }, deviceId: c.device!.id, createdAt: clock().toISOString() });
+    secrets.push = list.slice(-10);
+    await store.writeSecrets(c.device!.userId, secrets);
+    return { ok: true };
+  });
+
+  route('POST', '/api/push/unsubscribe', true, async (c) => {
+    const secrets = await store.readSecrets(c.device!.userId);
+    secrets.push = (secrets.push ?? []).filter((x: PushSubscriptionRecord) => x.deviceId !== c.device!.id && x.endpoint !== c.body?.endpoint);
+    await store.writeSecrets(c.device!.userId, secrets);
+    return { ok: true };
+  });
+
+  route('POST', '/api/push/test', true, async (c) => {
+    const n = await pushTo(c.device!.userId, [{ title: 'Brain Dump', body: 'Notifications are working. I’ll only use them when something needs you.', tag: 'test' }]);
+    return { sent: n };
   });
 
   route('GET', '/api/health', false, async () => ({ ok: true }));
@@ -643,6 +726,27 @@ export async function createApp(opts: AppOptions): Promise<App> {
     }
   });
 
+  async function pushTo(userId: string, payloads: PushPayloadLite[]): Promise<number> {
+    if (!opts.push || !payloads.length) return 0;
+    const secrets = await store.readSecrets(userId);
+    const subs: PushSubscriptionRecord[] = secrets.push ?? [];
+    if (!subs.length) return 0;
+    let sent = 0;
+    const dead = new Set<string>();
+    for (const p of payloads) {
+      for (const sub of subs) {
+        const r = await opts.push.send(sub, { ...p, url: '/' });
+        if (r === 'ok') sent++;
+        if (r === 'gone') dead.add(sub.endpoint);
+      }
+    }
+    if (dead.size) {
+      secrets.push = subs.filter((x) => !dead.has(x.endpoint));
+      await store.writeSecrets(userId, secrets);
+    }
+    return sent;
+  }
+
   async function tickAll(now = clock()): Promise<number> {
     let n = 0;
     for (const userId of store.userIds()) {
@@ -653,6 +757,8 @@ export async function createApp(opts: AppOptions): Promise<App> {
           out.push(...r.notifications);
         });
         for (const note of out) broadcast(userId, 'notification', note);
+        const assistantName = (await store.read(userId)).profile.assistantName ?? 'Brain Dump';
+        await pushTo(userId, out.map((n) => ({ title: assistantName, body: n.text, tag: n.key.slice(0, 60) })));
         n += out.length;
       } catch (err) {
         console.error('[brain-dump] tick failed for', userId, err);

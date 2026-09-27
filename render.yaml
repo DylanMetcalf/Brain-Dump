@@ -1,5 +1,5 @@
-# One-click hosting on Render (https://render.com): New → Blueprint → pick this repo.
-# The disk keeps your encrypted data between deploys (Render disks need a paid instance).
+# Render blueprint: New → Blueprint → choose this repository.
+# The disk keeps your encrypted data (and notification keys) safe between deploys.
 services:
   - type: web
     name: brain-dump
@@ -13,7 +13,7 @@ services:
     envVars:
       - key: BRAIN_DUMP_KEY
         generateValue: true
-      - key: PUBLIC_URL
+      - key: INVITE_CODE
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false

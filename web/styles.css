@@ -174,3 +174,5 @@ body.mini .convo .bubble { font-size: 14px; }
 
 .steps { margin: 8px 0 12px; padding-left: 20px; display: grid; gap: 6px; color: var(--text); font-size: 15px; }
 .mono { font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+
+input.plain { border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 12px; font-size: 17px; text-align: center; }

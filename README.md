@@ -10,6 +10,8 @@ The product is measured by **mental load removed**, not by tasks, notifications 
 CAPTURE → UNDERSTAND → REMEMBER → DECIDE → ACT → VERIFY → LEARN
 ```
 
+**Installing for real people: see [docs/SETUP.md](docs/SETUP.md)** (Render + iPhone, step by step).
+
 ## Quick start
 
 ```bash
@@ -32,6 +34,8 @@ Desktop (tray icon, global shortcut, floating window): `cd desktop && npm instal
 |---|---|
 | `PORT`, `HOST` | Where to listen (default `127.0.0.1:8787`) |
 | `DATA_DIR` | Encrypted data directory (default `./data`) |
+| `INVITE_CODE` | If set, new accounts need this code (recommended for any public server) |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Push notification keys. Generated and kept in `DATA_DIR` if unset |
 | `BRAIN_DUMP_KEY` | 32-byte encryption key (hex or base64). If unset, one is generated in `DATA_DIR/.key` with mode 0600 |
 | `PUBLIC_URL` | Public base URL (used for OAuth redirects and calendar feed links) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Turn on Google Calendar and Gmail |

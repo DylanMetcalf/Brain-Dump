@@ -17,3 +17,9 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Optional: OpenAI (ChatGPT) key for a natural speaking voice, and as a backup brain.
+      - key: OPENAI_API_KEY
+        sync: false
+      # Optional: iCloud link to your finished Brain Dump Shortcut, so others install it in one tap.
+      - key: SHORTCUT_URL
+        sync: false

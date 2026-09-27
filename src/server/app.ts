@@ -21,6 +21,8 @@ import { toICS } from './ics.js';
 import { DeviceRecord, loadOrCreateKey, Store } from './store.js';
 import { integrationRoutes, providersFor, IntegrationConfig } from './integrations.js';
 import { makeAskClaude, verifyKey } from './claude.js';
+import { makeAskOpenAI, OPENAI_VOICES, speak, verifyOpenAIKey, withBackup } from './openai.js';
+import { describeOutbox, enablePhoneSync, markSentToPhone, phoneOutbox } from '../core/phone.js';
 import type { AskClaude } from '../core/assist.js';
 import { isValidSubscription, PushSender, PushSubscriptionRecord } from './push.js';
 import { createHmac, randomBytes } from 'node:crypto';
@@ -37,6 +39,10 @@ export interface AppOptions {
   providers?: (userId: string) => Partial<Providers>;
   /** Server-wide Anthropic key (ANTHROPIC_API_KEY); a key saved in Settings takes precedence. */
   anthropicApiKey?: string;
+  /** OpenAI key (ChatGPT) for natural-sounding spoken replies, and as a backup brain. */
+  openaiApiKey?: string;
+  /** An iCloud link to the ready-made Brain Dump Shortcut, so others install it in one tap. */
+  shortcutUrl?: string;
   /** Test hook: replaces the real Claude call. */
   askClaude?: (userId: string) => AskClaude | undefined;
   tickIntervalMs?: number;
@@ -142,7 +148,8 @@ export async function createApp(opts: AppOptions): Promise<App> {
       ...(opts.providers?.(userId) ?? {}),
     };
     const key = typeof secrets.anthropic?.apiKey === 'string' ? secrets.anthropic.apiKey : opts.anthropicApiKey;
-    const askClaude = opts.askClaude ? opts.askClaude(userId) : key ? makeAskClaude(key) : undefined;
+    const openaiKey = openaiKeyFrom(secrets);
+    const askClaude = opts.askClaude ? opts.askClaude(userId) : withBackup(key ? makeAskClaude(key) : undefined, openaiKey ? makeAskOpenAI(openaiKey, opts.fetchImpl) : undefined);
     return new Assistant(state, { providers, clock, askClaude });
   }
 
@@ -348,6 +355,7 @@ export async function createApp(opts: AppOptions): Promise<App> {
         const q = b.preferences;
         if (q.clearMeans === 'archive' || q.clearMeans === 'delete') p.clearMeans = q.clearMeans;
         if (typeof q.voiceReplies === 'boolean') p.voiceReplies = q.voiceReplies;
+        if (typeof q.voice === 'string' && (OPENAI_VOICES as readonly string[]).includes(q.voice)) p.voice = q.voice;
         if (q.proactivity === 'quiet' || q.proactivity === 'normal') p.proactivity = q.proactivity;
         if (Number.isFinite(q.defaultEventLeadMin)) p.defaultEventLeadMin = Math.max(0, Math.min(1440, Number(q.defaultEventLeadMin)));
         if (q.weeklyBriefing && typeof q.weeklyBriefing === 'object') {
@@ -644,6 +652,62 @@ export async function createApp(opts: AppOptions): Promise<App> {
     return { connected: !!opts.anthropicApiKey };
   });
 
+  // ---- ChatGPT (optional): natural voice + backup brain ----
+  function openaiKeyFrom(secrets: Record<string, any>): string | undefined {
+    return typeof secrets.openai?.apiKey === 'string' ? secrets.openai.apiKey : opts.openaiApiKey;
+  }
+
+  route('GET', '/api/voice', true, async (c) => {
+    const secrets = await store.readSecrets(c.device!.userId);
+    const state = await store.withUser(c.device!.userId, async (s) => s);
+    return {
+      natural: !!openaiKeyFrom(secrets),
+      source: secrets.openai?.apiKey ? 'settings' : opts.openaiApiKey ? 'server' : null,
+      hint: secrets.openai?.hint ?? null,
+      voice: state.profile.preferences.voice ?? 'sage',
+      voices: OPENAI_VOICES,
+    };
+  });
+
+  route('PUT', '/api/voice/key', true, async (c) => {
+    limit(`oaikey:${c.device!.userId}`, 10, 60_000);
+    const key = String(c.body?.apiKey ?? '').trim();
+    if (!/^sk-[A-Za-z0-9_-]{20,}$/.test(key)) throw new HttpError(400, 'That doesn’t look like an OpenAI API key (it starts with sk-).');
+    const check = await verifyOpenAIKey(key, opts.fetchImpl);
+    if (!check.ok) throw new HttpError(400, check.error ?? 'That key didn’t work.');
+    const secrets = await store.readSecrets(c.device!.userId);
+    secrets.openai = { apiKey: key, hint: `…${key.slice(-4)}`, savedAt: clock().toISOString() };
+    await store.writeSecrets(c.device!.userId, secrets);
+    return { natural: true, hint: secrets.openai.hint };
+  });
+
+  route('DELETE', '/api/voice/key', true, async (c) => {
+    const secrets = await store.readSecrets(c.device!.userId);
+    delete secrets.openai;
+    await store.writeSecrets(c.device!.userId, secrets);
+    return { natural: !!opts.openaiApiKey };
+  });
+
+  /** Natural speech for a reply. The app falls back to the phone's own voice on any error. */
+  route('POST', '/api/tts', true, async (c) => {
+    limit(`tts:${c.device!.userId}`, 60, 60_000);
+    const text = String(c.body?.text ?? '').trim();
+    if (!text) throw new HttpError(400, 'Nothing to say.');
+    const secrets = await store.readSecrets(c.device!.userId);
+    const key = openaiKeyFrom(secrets);
+    if (!key) throw new HttpError(404, 'Natural voice isn’t set up.');
+    const state = await store.withUser(c.device!.userId, async (s) => s);
+    let audio: Buffer;
+    try {
+      audio = await speak(key, text, String(c.body?.voice ?? state.profile.preferences.voice ?? 'sage'), opts.fetchImpl);
+    } catch {
+      throw new HttpError(502, 'The voice service didn’t answer.');
+    }
+    c.res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': 'audio/mpeg', 'Content-Length': String(audio.length), 'Cache-Control': 'no-store' });
+    c.res.end(audio);
+    return undefined;
+  });
+
   // ---- One-tap talking (Siri Shortcut / Action Button / widgets) ----
   /** Creates a dedicated key for a Shortcut. Shown once; revocable under Devices. */
   route('POST', '/api/auth/shortcut', true, async (c) => {
@@ -655,6 +719,8 @@ export async function createApp(opts: AppOptions): Promise<App> {
       url: `${baseUrl(c)}/api/quick`,
       /** The whole Shortcut in one link: the dictated words go on the end. */
       link: `${baseUrl(c)}/api/quick?format=text&key=${encodeURIComponent(token)}&text=`,
+      /** For the full Shortcut: JSON back, including what to add to the iPhone's own apps. */
+      appLink: `${baseUrl(c)}/api/quick?key=${encodeURIComponent(token)}`,
     };
   });
 
@@ -666,20 +732,69 @@ export async function createApp(opts: AppOptions): Promise<App> {
   const quickSessions = new Map<string, string>();
   const quick: Handler = async (c) => {
     limit(`quick:${c.device!.id}`, 60, 60_000);
-    const text = (c.url.searchParams.get('text') ?? '').trim() || (typeof c.body === 'string' ? c.body : str(c.body?.text));
-    if (!text) throw new HttpError(400, 'Nothing was heard.');
-    const r = await withAssistant(c.device!.userId, (a) => a.handle({ text, sessionId: quickSessions.get(c.device!.id), device: c.device!.name }));
-    if (r.sessionEnded) quickSessions.delete(c.device!.id);
-    else quickSessions.set(c.device!.id, r.sessionId);
+    const text = ((c.url.searchParams.get('text') ?? '').trim() || (typeof c.body === 'string' ? c.body : str(c.body?.text)) || '').trim();
+    // "sync" (or nothing, from the app's "Add to iPhone" button): just hand over what's new.
+    const syncOnly = !text || /^sync$/i.test(text) || c.url.searchParams.get('sync') === '1';
+    if (syncOnly && c.url.searchParams.get('format') === 'text') throw new HttpError(400, 'Nothing was heard.');
+    const userId = c.device!.userId;
+    let r: Awaited<ReturnType<Assistant['handle']>> | undefined;
+    if (!syncOnly) {
+      r = await withAssistant(userId, (a) => a.handle({ text, sessionId: quickSessions.get(c.device!.id), device: c.device!.name }));
+      if (r.sessionEnded) quickSessions.delete(c.device!.id);
+      else quickSessions.set(c.device!.id, r.sessionId);
+    }
     if (c.url.searchParams.get('format') === 'text') {
       c.res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
-      c.res.end(r.text);
+      c.res.end(r!.text);
       return undefined;
     }
-    return { text: r.text, question: !!r.question, done: r.settled || r.sessionEnded };
+    // Everything new goes to the phone's own apps in the same run.
+    const phone = await store.withUser(userId, async (state) => {
+      const items = phoneOutbox(state, clock());
+      if (items.length) {
+        markSentToPhone(state, items.map((i) => i.id), clock());
+        state.version++;
+      } else if (state.phoneSync?.enabled) state.phoneSync.lastRunAt = clock().toISOString();
+      return { items, version: state.version };
+    });
+    if (phone.items.length) broadcast(userId, 'sync', { version: phone.version });
+    return {
+      text: r?.text ?? (phone.items.length ? `Added ${describeOutbox(phone.items)} to your iPhone.` : ''),
+      question: !!r?.question,
+      /** "yes" when Brain Dump asked something: the Shortcut runs itself again to hear the answer. */
+      listen: r?.question ? 'yes' : 'no',
+      done: r ? r.settled || r.sessionEnded : true,
+      phone: phone.items,
+    };
   };
   route('POST', '/api/quick', true, quick);
   route('GET', '/api/quick', true, quick);
+
+  // ---- iPhone apps (Clock, Reminders, Calendar, Notes) through the Shortcut ----
+  route('GET', '/api/phone', true, async (c) => {
+    return store.withUser(c.device!.userId, async (state) => {
+    const items = phoneOutbox(state, clock());
+    return {
+      enabled: !!state.phoneSync?.enabled,
+      pending: items.length,
+      summary: describeOutbox(items),
+      lastRunAt: state.phoneSync?.lastRunAt ?? null,
+      shoppingList: state.phoneSync?.shoppingList ?? 'Shopping',
+      shortcutName: 'Brain Dump',
+      shortcutUrl: opts.shortcutUrl ?? null,
+    };
+    });
+  });
+
+  route('PUT', '/api/phone', true, async (c) => {
+    return withAssistant(c.device!.userId, async (_a, state) => {
+      const sync = enablePhoneSync(state, clock(), c.body?.enabled !== false);
+      const list = (str(c.body?.shoppingList) ?? '').trim();
+      if (list) sync.shoppingList = list.slice(0, 40);
+      state.version++;
+      return { enabled: sync.enabled, shoppingList: sync.shoppingList ?? 'Shopping' };
+    });
+  });
 
   // ---- Setup progress (the Home screen checklist) ----
   route('GET', '/api/setup', true, async (c) => {

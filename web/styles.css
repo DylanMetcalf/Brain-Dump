@@ -244,3 +244,21 @@ a { color: var(--accent); }
 /* ---------- desktop mini window ---------- */
 body.mini .tabbar { display: none; }
 body.mini .app { padding-bottom: 20px; }
+
+/* Talk: spoken replies on/off */
+.talk-top { display: flex; justify-content: flex-end; width: 100%; }
+.talk-voice { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.talk-voice.on { background: var(--accent-soft); color: var(--accent); }
+.voice-pick { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 0; }
+.voice-pick .chip { background: var(--surface-2); color: var(--text); }
+.voice-pick .chip.on { background: var(--accent); color: var(--on-accent); }
+.recipe { counter-reset: step; list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 12px; }
+.recipe > li { counter-increment: step; position: relative; padding-left: 38px; }
+.recipe > li::before { content: counter(step); position: absolute; left: 0; top: 0; width: 26px; height: 26px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 14px; display: grid; place-items: center; }
+.recipe strong { display: block; }
+.recipe .row-sub { display: block; margin-top: 2px; }
+.recipe ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 14px; display: grid; gap: 4px; }
+.kbd { font: 600 13px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface-2); padding: 1px 6px; border-radius: 6px; color: var(--text); }
+details.card > summary { cursor: pointer; font-weight: 700; font-size: 17px; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+details.card > summary::-webkit-details-marker { display: none; }
+details.card[open] > summary { margin-bottom: 8px; }

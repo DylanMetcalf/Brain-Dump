@@ -83,3 +83,14 @@ describe('classification', () => {
     expect(stripWakeName('Mile high club', 'Milo').addressed).toBe(false);
   });
 });
+
+describe('evening things', () => {
+  it('"dinner at 7" means 7 PM, "breakfast at 7" means 7 AM', async () => {
+    const { setup, at } = await import('./helpers.js');
+    const h = setup();
+    await h.say('Dinner with Sarah on Friday at 7');
+    await h.say('Breakfast with Tom on Saturday at 7');
+    expect(h.state.events.find((e) => e.title.startsWith('Dinner'))!.start).toBe(at(10, 2, 19).toISOString());
+    expect(h.state.events.find((e) => e.title.startsWith('Breakfast'))!.start).toBe(at(10, 3, 7).toISOString());
+  });
+});

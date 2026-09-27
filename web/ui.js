@@ -51,6 +51,9 @@ const PATHS = {
   trash: ['M4 7h16', 'M9 7V4h6v3', 'M6 7l1 13h10l1-13'],
   users: ['M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z', 'M2 21a7 7 0 0 1 14 0', 'M16 3.5a4 4 0 0 1 0 7', 'M22 21a7 7 0 0 0-4-6.3'],
   sparkle: ['M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z'],
+  speaker: ['M4 9h4l5-4v14l-5-4H4z', 'M16.5 8.5a5 5 0 0 1 0 7', 'M19 6a8.5 8.5 0 0 1 0 12'],
+  speakerOff: ['M4 9h4l5-4v14l-5-4H4z', 'M17 9l5 6', 'M22 9l-5 6'],
+  iphone: ['M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z', 'M11 18h2'],
 };
 
 export function icon(name, size = 22) {
@@ -134,6 +137,7 @@ export function linkIcon(url) {
   if (/^tel:/.test(url)) return 'phone';
   if (/^facetime:/.test(url)) return 'video';
   if (/^mailto:/.test(url)) return 'mail';
+  if (/^shortcuts:/.test(url)) return 'iphone';
   if (/spotify|music\.apple|music\.youtube/.test(url)) return 'music';
   if (/zoom\.us|meet\.google|teams/.test(url)) return 'video';
   if (/\.ics|webcal/.test(url)) return 'calendar';

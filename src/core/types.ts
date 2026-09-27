@@ -25,6 +25,8 @@ export interface Preferences {
   personalMeetingLink?: { provider: 'zoom' | 'meet' | 'teams' | 'other'; url: string };
   /** Combine separately captured groceries into one list sent before the user usually shops. */
   shoppingDigest?: { weekday?: number; hour: number };
+  /** Natural voice (ChatGPT) for spoken replies. */
+  voice?: string;
 }
 
 export interface Profile {
@@ -399,6 +401,19 @@ export interface UserState {
   mailbox: EmailMessage[];
   /** clientId → reply, so offline captures replayed twice never duplicate. */
   processed: { clientId: string; at: ISODate; reply: unknown }[];
+  /** Copying into the iPhone's own apps (Clock, Reminders, Calendar, Notes) via the Brain Dump Shortcut. */
+  phoneSync?: PhoneSync;
   /** Connected external services (tokens live in the encrypted store, never in plain logs). */
   integrations: Record<string, { connectedAt: ISODate; scopes: string[]; account?: string; data?: Record<string, unknown> }>;
+}
+
+export interface PhoneSync {
+  enabled: boolean;
+  /** Only things created after this are copied, so turning it on doesn't flood the phone. */
+  since: ISODate;
+  /** Ids already handed to the phone (most recent kept). */
+  sent: ID[];
+  /** Where shopping goes in Reminders. */
+  shoppingList?: string;
+  lastRunAt?: ISODate;
 }

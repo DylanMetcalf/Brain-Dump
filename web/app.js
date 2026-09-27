@@ -4,6 +4,7 @@
 import { api, auth, flushQueue, openStream, queued, say, NetworkError, LOCAL } from './api.js';
 import { createVoice, voiceSupported as voiceAvailable } from './voice.js';
 import { h, icon, brandMark, toast, sheet, linkIcon, greeting, fmtDay, fmtTime, isoDate } from './ui.js';
+import { loadVoiceInfo } from './speech.js';
 import { renderSettings, renderBackupScreen, renderShortcutScreen, renderHistory, renderWelcome, enablePush, isIOS, isStandalone } from './settings.js';
 
 const voiceSupported = voiceAvailable && !LOCAL;
@@ -24,7 +25,21 @@ export const ui = {
   online: navigator.onLine,
   version: 0,
   thinking: false,
+  phone: null, // iPhone apps sync status
 };
+
+/** Runs the Brain Dump Shortcut, which adds anything new to Clock, Reminders, Calendar and Notes. */
+export const PHONE_SYNC_URL = 'shortcuts://run-shortcut?name=Brain%20Dump&input=text&text=sync';
+
+export function autoPhone() {
+  try { return localStorage.getItem('bd.autoPhone') !== 'no'; } catch { return true; }
+}
+
+export async function refreshPhone() {
+  if (LOCAL) return null;
+  ui.phone = await api('/api/phone').catch(() => ui.phone);
+  return ui.phone;
+}
 
 export const app = document.getElementById('app');
 
@@ -45,6 +60,9 @@ const voice = createVoice({
     if (el) el.textContent = t;
   },
   speakReplies: () => ui.state?.profile?.preferences?.voiceReplies !== false,
+  afterReply: (r) => {
+    if (!r?.question && autoPhone() && isIOS() && r?.links?.some((l) => l.url === PHONE_SYNC_URL)) location.href = PHONE_SYNC_URL;
+  },
 });
 
 function setSession(id) {
@@ -89,9 +107,17 @@ export async function send(text, { fromVoice = false } = {}) {
   }
   if (r.offline) ui.online = false;
   setSession(r.sessionEnded ? null : r.sessionId);
+  // Anything that should also go into the iPhone's own apps?
+  if (ui.phone?.enabled && r.actions?.length) {
+    const p = await refreshPhone();
+    if (p?.pending) {
+      r.links = [...(r.links ?? []), { label: `Add ${p.summary} to your iPhone`, url: PHONE_SYNC_URL }];
+      // Typed in the app: hand over straight away. Spoken: after the reply has been read out.
+      if (autoPhone() && !fromVoice && isIOS()) setTimeout(() => { location.href = PHONE_SYNC_URL; }, 700);
+    }
+  }
   addAssistant(r);
   refreshOverview();
-  void fromVoice;
   return r;
 }
 
@@ -237,8 +263,28 @@ function talkTap() {
   voice.tap();
 }
 
+function spokenRepliesOn() {
+  return ui.state?.profile?.preferences?.voiceReplies !== false;
+}
+
+function voiceToggle() {
+  const on = spokenRepliesOn();
+  return h('button', { id: 'voice-toggle', class: `pill-btn talk-voice ${on ? 'on' : ''}`, 'aria-pressed': on ? 'true' : 'false', onclick: async () => {
+    const next = !spokenRepliesOn();
+    ui.state.profile.preferences.voiceReplies = next;
+    document.getElementById('voice-toggle')?.replaceWith(voiceToggle());
+    if (!next) stopSpeakingNow();
+    await api('/api/profile', { method: 'PATCH', body: { preferences: { voiceReplies: next } } }).catch(() => {});
+  } }, icon(on ? 'speaker' : 'speakerOff', 17), on ? 'Replies out loud' : 'Replies on screen');
+}
+
+function stopSpeakingNow() {
+  import('./speech.js').then((m) => m.stopSpeaking());
+}
+
 function renderTalk() {
   page('talk',
+    h('div', { class: 'talk-top' }, voiceToggle()),
     h('div', { class: 'talk' },
       h('p', { class: 'eyebrow center' }, ui.state?.profile?.assistantName ?? 'Brain Dump'),
       h('p', { id: 'talk-prompt', class: 'talk-prompt' }),
@@ -519,7 +565,7 @@ async function itemAction(kind, id, action = 'complete') {
 
 export async function refreshSetup() {
   if (LOCAL) return;
-  ui.setup = await api('/api/setup').catch(() => null);
+  [ui.setup] = await Promise.all([api('/api/setup').catch(() => null), refreshPhone(), loadVoiceInfo()]);
   if (route() === 'home') renderHome();
 }
 
@@ -531,6 +577,7 @@ function setupCard() {
   const items = [];
   if (isIOS() && !isStandalone()) items.push({ title: 'Add to your Home Screen', sub: 'Share → Add to Home Screen, then open it from there.' });
   if (!ui.setup.push && (!isIOS() || isStandalone())) items.push({ title: 'Turn on reminders', sub: 'So they reach you with the app closed.', action: () => enablePush().then(refreshSetup) });
+  if (!ui.phone?.enabled && isIOS()) items.push({ title: 'Connect your iPhone apps', sub: 'Real alarms, Reminders, Calendar and Notes — and “Hey Siri, Brain Dump”.', href: '#shortcut' });
   if (!ui.setup.backupCode) items.push({ title: 'Save a backup code', sub: 'Your way back in on a new phone.', href: '#backup' });
   if (!items.length) return null;
   return h('section', { class: 'card setup' },

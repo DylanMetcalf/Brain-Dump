@@ -768,7 +768,7 @@ const MATCHERS: Matcher[] = [
     if (explicit) {
       const text = `${explicit[1]} ${explicit[2]}`;
       const when = w(text, { now: new Date(0), timeZone: 'UTC' });
-      return { kind: 'event_add', raw: o, title: keepCase(tidyTitle(when.rest), o), when, explicitCalendar: true };
+      return { kind: 'event_add', raw: o, title: keepCase(tidyTitle(when.rest), o), when: eveningSense(when, when.rest), explicitCalendar: true };
     }
     const have = t.match(/^(?:i(?:'ve| have)?|we(?:'ve| have)?) (?:got |have )?(?:a |an |my |the |our )?(.+)$/);
     const body = have ? have[1] : t;
@@ -777,7 +777,7 @@ const MATCHERS: Matcher[] = [
       (when.date || when.weekday !== undefined) && when.time && !/^(?:need|to|should|must|want|forgot|can)\b/.test(body) && when.rest.split(' ').length <= 6 && when.rest.length > 1;
     if (looksLikeEvent && !/^(?:buy|get|pick up|call|email|message|text|reply|tell)\b/.test(when.rest)) {
       const title = when.rest.replace(/^(?:add|put|schedule|pencil in|book in|plan|set up|create|make)\s+(?:an? )?(?:(?:event|appointment) (?:for |called )?)?/, '').replace(/^(?:got|have|a|an|my|the)\s+/, '');
-      return { kind: 'event_add', raw: o, title: keepCase(tidyTitle(title), o), when, explicitCalendar: false };
+      return { kind: 'event_add', raw: o, title: keepCase(tidyTitle(title), o), when: eveningSense(when, title), explicitCalendar: false };
     }
     return undefined;
   },
@@ -856,6 +856,14 @@ function capitalizeFirst(s: string): string {
   return x ? x[0].toUpperCase() + x.slice(1) : x;
 }
 
+/** "Dinner at 7" is 7 PM. An ambiguous morning hour for an evening kind of thing moves to the evening. */
+const EVENING_THINGS = /\b(dinner|supper|drinks?|pub|party|date night|date|movie|film|cinema|concert|gig|theatre|theater|show|bbq|barbecue|takeaway|games night|quiz)\b/;
+function eveningSense<T extends { time?: { hour: number; minute: number; ambiguous: boolean; hour12?: number } }>(when: T, title: string): T {
+  const t = when.time;
+  if (!t || !t.ambiguous || t.hour >= 12 || !EVENING_THINGS.test(title.toLowerCase())) return when;
+  return { ...when, time: { ...t, hour: t.hour + 12, ambiguous: false } };
+}
+
 /** Matching works on lower case; put back the capitals the person used ("Sarah", "Taylor Swift", "NHS"). */
 export function keepCase(s: string, original: string): string {
   const words = original.split(/\s+/).slice(1); // the first word is only capitalised because it starts the sentence
@@ -899,7 +907,9 @@ function fixWhen(th: Thought, ctx: InterpretOptions): Thought {
   if ('when' in th && th.when) {
     const source = th.when.matched.join(' ');
     const reparsed = parseWhen(source, ctx.now, ctx.timeZone, { answerMode: th.kind === 'modify' });
-    return { ...th, when: { ...reparsed, rest: th.when.rest } } as Thought;
+    let when: ParsedWhen = { ...reparsed, rest: th.when.rest };
+    if (th.kind === 'event_add') when = eveningSense(when, th.title);
+    return { ...th, when } as Thought;
   }
   return th;
 }

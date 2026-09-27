@@ -51,25 +51,8 @@ Open the app from the Home Screen, then **Settings → Notifications on this pho
 **Settings → Backup code → Get my backup code → Show my backup code** (or use the **Finish setting up** card). Save it in Notes or a password manager.
 There's no password; this code is how you get back in on a new phone or after clearing Safari data.
 
-### 4. One-tap talking (widget, Action Button, Back Tap or "Hey Siri")
-In the app: **Settings → Talk with one tap** (or the **Finish setting up** card on the Home screen) → **Create my Shortcut link** → **Copy link**. Tap **Test the link** to check it works.
-
-Then, in Apple's **Shortcuts** app:
-1. Tap **+**.
-2. Add **Dictate Text**.
-3. Add **Get Contents of URL**, tap the blue "URL", and paste the link.
-4. With the cursor at the very end of the link, tap **Dictated Text** in the bar above the keyboard.
-5. Add **Speak Text**.
-6. Rename it to **Brain Dump**.
-
-Put it one tap away:
-- **Home Screen widget**: press and hold the Home Screen → Edit → Add Widget → Shortcuts → Brain Dump
-- **Control Centre / Lock Screen (iOS 18)**: Control Centre → + → Add a Control → Shortcut → Brain Dump
-- **Back Tap**: Settings → Accessibility → Touch → Back Tap → Double Tap → Brain Dump
-- **Action Button** (iPhone 15 Pro and later): Settings → Action Button → Shortcut → Brain Dump
-- **Siri**: "Hey Siri, Brain Dump"
-
-The first time it runs, allow dictation and choose **Always Allow** for connecting to your Brain Dump address. If Brain Dump asks a follow-up ("What time?"), run it again within 10 minutes to answer.
+### 4. Siri, alarms, Reminders, Calendar and Notes
+Follow **[CONNECTIONS.md](CONNECTIONS.md)**. It covers each connection in the easiest order, with every pop-up and what to tap.
 
 ### 5. Using it
 - Tap the orb and talk, or type. Say "that's all" when you're done.
@@ -96,16 +79,19 @@ The first time it runs, allow dictation and choose **Always Allow** for connecti
 
 ## What it can do on an iPhone, honestly
 
+With the Brain Dump Shortcut connected (see [CONNECTIONS.md](CONNECTIONS.md)):
+
 | You say | What happens |
 |---|---|
-| "Dinner with Sarah Friday at 7" | Added to Brain Dump's calendar (and Google Calendar if connected). Tap the event → **Add to iPhone Calendar**, or subscribe once in Settings → Connections → iPhone Calendar. |
-| "Remind me to call the dentist tomorrow at 9" | Reminder, sent as a notification (turn notifications on in Settings). |
-| "Make a note that the wifi password is sunflower22" | Saved under Organise → Notes. |
-| "Set a timer for 10 minutes" / "Wake me at 6:30" | Notification when it's due. It can't set the Clock app's alarm; that needs a native app. |
-| "Send a WhatsApp to my mum saying I'll be late" | Message written; one tap opens WhatsApp with it filled in. Tell it her number once. |
+| "Dinner with Sarah Friday at 7" | Event at 7 PM in Brain Dump **and** in the iPhone Calendar (Google Calendar if that's the default). |
+| "Remind me to call the dentist tomorrow at 9" | A real reminder in **Reminders**, with an alert. |
+| "Wake me at 6:30" / "Set a timer for 10 minutes" | A real alarm in **Clock** / a real timer. |
+| "Make a note that the wifi password is sunflower22" | In Brain Dump and in **Notes**. |
+| "I need milk, eggs and bread" | In your **Shopping** list in Reminders. |
+| "Send a WhatsApp to my mum saying I'll be late" | Message written; one tap opens WhatsApp with it filled in. |
 | "Call Mum" | One tap to call, FaceTime or WhatsApp. |
 | "Play some Taylor Swift" | One tap opens Spotify or Apple Music on that search. |
-| "Check my email" | Reads Gmail once Google is connected (see above). |
-| "My Zoom link is …" | Remembered, and added to meetings it sets up. |
+| "Check my email" | Reads Gmail once Google is connected. |
 
-A web app can't open or control other apps in the background on iPhone; Apple doesn't allow it. That's why messages, calls and music take one tap to finish. Writing to Apple Calendar, Reminders and Notes directly, a real Clock alarm, and a Home Screen widget would all need a native App Store app (an Apple Developer account, $99/year).
+Without the Shortcut, everything still works inside Brain Dump, with alarms and reminders arriving as notifications.
+No app can send a WhatsApp or iMessage in the background on iPhone, not even Siri, so those always end with one tap.

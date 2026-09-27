@@ -5,6 +5,8 @@
 // Works with the browser's own speech recognition, started only by a tap. When the
 // phone takes the microphone away (you switch apps), nothing you said is lost.
 
+import { speak as speakReply, stopSpeaking, isSpeaking, unlockAudio } from './speech.js';
+
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 export const voiceSupported = !!Recognition;
@@ -120,6 +122,7 @@ export function createVoice(h) {
     }
     if (reply?.text && h.speakReplies()) await speak(reply.text);
     busy = false;
+    h.afterReply?.(reply);
     // Only keep listening when Brain Dump asked something.
     if (reply?.question && !reply.sessionEnded && active) {
       heardAnything = false;
@@ -128,24 +131,14 @@ export function createVoice(h) {
     } else stop();
   }
 
-  function speak(text) {
-    return new Promise((resolve) => {
-      if (!ttsSupported) return resolve();
-      h.onState('speaking');
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = navigator.language || 'en-GB';
-      u.rate = 1.05;
-      u.onend = u.onerror = () => resolve();
-      speechSynthesis.cancel();
-      speechSynthesis.speak(u);
-      // Safety net: some browsers never fire onend.
-      setTimeout(resolve, Math.min(20000, 1500 + text.length * 70));
-    });
+  async function speak(text) {
+    h.onState('speaking');
+    await speakReply(text);
   }
 
   function start() {
     if (!voiceSupported) return false;
-    if (ttsSupported) speechSynthesis.cancel();
+    stopSpeaking();
     active = true;
     busy = false;
     carried = '';
@@ -169,8 +162,9 @@ export function createVoice(h) {
 
   /** Tap while listening: send what you've said now. Tap while speaking: stop talking. */
   function tap() {
-    if (ttsSupported && speechSynthesis.speaking) {
-      speechSynthesis.cancel();
+    unlockAudio(); // inside the tap, so iPhone lets the reply play later
+    if (isSpeaking()) {
+      stopSpeaking();
       return 'interrupted';
     }
     if (active && !busy) {

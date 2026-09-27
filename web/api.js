@@ -26,7 +26,7 @@ export const auth = {
 
 export class NetworkError extends Error {}
 
-export async function api(path, { method, body } = {}) {
+export async function api(path, { method, body, raw = false } = {}) {
   if (LOCAL) return LOCAL.request(path, method ?? (body ? 'POST' : 'GET'), body);
   let res;
   try {
@@ -41,6 +41,7 @@ export async function api(path, { method, body } = {}) {
   } catch {
     throw new NetworkError('offline');
   }
+  if (raw && res.ok) return res;
   const data = await res.json().catch(() => ({}));
   if (res.status === 401) {
     auth.token = null;

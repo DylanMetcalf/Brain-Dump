@@ -5,6 +5,7 @@
 // the same audio element is then reused for every reply.
 
 import { api, LOCAL } from './api.js';
+import { native } from './device.js';
 
 /** A tenth of a second of silence as a WAV, built here so it's always valid. */
 function silentWav() {
@@ -66,6 +67,7 @@ export function isSpeaking() {
 export function stopSpeaking() {
   speakingNow = false;
   try { audio?.pause(); } catch {}
+  if (native) native.call('stopSpeaking').catch(() => {});
   if ('speechSynthesis' in window) speechSynthesis.cancel();
 }
 
@@ -101,6 +103,8 @@ export function setDeviceVoice(uri) {
 }
 
 function speakOnDevice(text) {
+  // In the iPhone app: Apple's best installed voice (Premium/Enhanced/Siri-quality where present).
+  if (native) return native.call('speak', { text }).catch(() => {});
   return new Promise((resolve) => {
     if (!('speechSynthesis' in window)) return resolve();
     const u = new SpeechSynthesisUtterance(text);

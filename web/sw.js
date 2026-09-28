@@ -1,6 +1,6 @@
 // Service worker: the app shell works offline so thoughts can still be captured.
-const CACHE = 'brain-dump-v5';
-const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/api.js', '/voice.js', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/ui.js', '/settings.js', '/speech.js'];
+const CACHE = 'brain-dump-v6';
+const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/api.js', '/voice.js', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/ui.js', '/settings.js', '/speech.js', '/device.js', '/setup.js'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

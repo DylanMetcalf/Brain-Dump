@@ -6,8 +6,33 @@
 // phone takes the microphone away (you switch apps), nothing you said is lost.
 
 import { speak as speakReply, stopSpeaking, isSpeaking, unlockAudio } from './speech.js';
+import { native } from './device.js';
 
-const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+/**
+ * Inside the Brain Dump iPhone app, speech comes from Apple's own recogniser (on-device where
+ * available) through the bridge, shaped like the browser's SpeechRecognition so the rest of
+ * this file doesn't care which one it's talking to.
+ */
+class NativeRecognition {
+  constructor() {
+    this.lang = 'en-GB';
+    this.onresult = null;
+    this.onerror = null;
+    this.onend = null;
+    this.offs = [];
+  }
+  start() {
+    const off = () => { this.offs.forEach((f) => f()); this.offs = []; };
+    this.offs.push(native.on('speech', (d) => this.onresult?.({ results: [Object.assign([{ transcript: d.text }], { isFinal: !!d.isFinal })] })));
+    this.offs.push(native.on('speecherror', (d) => this.onerror?.({ error: d.error })));
+    this.offs.push(native.on('speechend', () => { off(); this.onend?.(); }));
+    native.call('startListening', { lang: this.lang }).catch((err) => { this.onerror?.({ error: /permission|denied|authori/i.test(err.message) ? 'not-allowed' : 'aborted' }); off(); this.onend?.(); });
+  }
+  stop() { native.call('stopListening').catch(() => {}); }
+  abort() { native.call('stopListening', { discard: true }).catch(() => {}); }
+}
+
+const Recognition = native ? NativeRecognition : window.SpeechRecognition || window.webkitSpeechRecognition;
 
 export const voiceSupported = !!Recognition;
 export const ttsSupported = 'speechSynthesis' in window;

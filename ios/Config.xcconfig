@@ -1,0 +1,6 @@
+// Your Brain Dump server (the Render address), e.g. https:/$()/brain-dump-abcd.onrender.com
+// (the $() stops Xcode treating // as a comment).
+BRAIN_DUMP_SERVER = https:/$()/brain-dump.onrender.com
+
+// Your Apple Developer Team ID (Xcode → Settings → Accounts), for installing on a phone.
+BD_TEAM_ID =

@@ -3,6 +3,7 @@
 import { api, auth, LOCAL } from './api.js';
 import { h, icon, brandMark, toast, sheet, copyButton } from './ui.js';
 import { ui, app, page, loadState, refreshAll, homeSections, setHomeSections, boot, refreshSetup, refreshPhone, autoPhone, PHONE_SYNC_URL } from './app.js';
+import { isNative } from './device.js';
 import { speak, stopSpeaking, deviceVoices, setDeviceVoice, loadVoiceInfo, setVoiceInfo, unlockAudio } from './speech.js';
 
 const SCOPES = {
@@ -67,10 +68,12 @@ export async function renderSettings() {
   page('settings',
     h('header', { class: 'page-head' }, h('div', {}, h('h1', {}, 'Settings'))),
 
-    LOCAL ? null : group('Siri & iPhone apps',
-      linkRow('iphone', 'Siri, Clock, Reminders, Calendar, Notes', phone?.enabled
-        ? `On — ${phone.lastRunAt ? `last used ${new Date(phone.lastRunAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : 'waiting for the first run'}${phone.pending ? ` · ${phone.pending} to add` : ''}`
-        : 'Real alarms, reminders, events and notes on your iPhone, and “Hey Siri, Brain Dump”', () => (location.hash = '#shortcut'))),
+    LOCAL ? null : group('Connections',
+      linkRow('check', 'Health', ui.health?.problems?.length
+        ? `${ui.health.problems.length} thing${ui.health.problems.length > 1 ? 's' : ''} need${ui.health.problems.length > 1 ? '' : 's'} you`
+        : 'Everything Brain Dump is connected to, and whether it’s working', () => (location.hash = '#health')),
+      linkRow('sparkle', 'Set up again', 'Choose what Brain Dump works with', () => { try { sessionStorage.removeItem('bd.setupFlow'); } catch {} location.hash = '#setup'; }),
+      !isNative && isIOS() ? linkRow('iphone', 'Siri & iPhone apps (Shortcut)', phone?.enabled ? 'On — through your Brain Dump Shortcut' : 'Optional, until the Brain Dump iPhone app is installed', () => (location.hash = '#shortcut')) : null),
 
     group('You and your assistant',
       setRow('Assistant’s name', h('input', { class: 'inline-input', value: p.assistantName ?? '', 'aria-label': 'Assistant name', onchange: (e) => patchProfile({ assistantName: e.target.value }) })),
@@ -89,20 +92,6 @@ export async function renderSettings() {
     voiceGroup(p, voiceInfo),
 
     claudeGroup(ai),
-
-    group('Connections',
-      h('p', { class: 'group-note' }, 'How Brain Dump works with the apps on your phone.'),
-      connRow('calendar', 'Google Calendar', google?.scopes?.includes('calendar')
-        ? 'Connected — events go straight into Google Calendar'
-        : phone?.enabled ? 'Through your iPhone: events go to your default calendar (make it Google — tap for how)' : 'Easiest through your iPhone — tap for how', () => googleCalendarSheet(integrations?.available?.google)),
-      connRow('calendar', 'iPhone Calendar', phone?.enabled ? 'On — events are added through the Brain Dump Shortcut' : 'Show everything from Brain Dump in the Calendar app', () => calendarSubscribe()),
-      connRow('mail', 'Gmail', google?.scopes?.includes('gmail') ? 'Connected — ask “check my emails”' : integrations?.available?.google ? 'Tap to connect' : 'Needs a one-time Google setup on the server (see the setup guide)', integrations?.available?.google ? () => connectGoogle(['gmail']) : null),
-      connRow('message', 'WhatsApp & Messages', 'Ready — say “Send a WhatsApp to Mum saying…” and tap to send', null),
-      connRow('phone', 'Phone & FaceTime', 'Ready — say “Call Mum”', null),
-      connRow('music', 'Music', 'Ready — say “Play some jazz” (Spotify or Apple Music)', null),
-      connRow('timer', 'Timers & alarms', phone?.enabled ? 'Real Clock alarms and timers, through the Shortcut' : 'Notifications for now — connect your iPhone apps for real alarms', phone?.enabled ? null : () => (location.hash = '#shortcut')),
-      connRow('video', 'Zoom', p.preferences.personalMeetingLink ? 'Using your personal meeting link' : 'Say “My Zoom link is …” once, and I’ll add it to meetings', null),
-      LOCAL ? null : connRow('bell', 'Notifications on this phone', 'Reminders, timers and replies reach you with the app closed', () => enablePush())),
 
     group('What I can do',
       h('p', { class: 'group-note' }, 'I only act within what you allow. Anything involving money, or that can’t be undone, always comes back to you.'),
@@ -186,22 +175,6 @@ function openaiKeyBox() {
     } }, 'Save')), msg);
 }
 
-function googleCalendarSheet(serverGoogle) {
-  sheet('Google Calendar',
-    h('p', { class: 'sheet-sub' }, 'The simplest way: let your iPhone talk to Google, and Brain Dump talks to your iPhone. No Google developer setup needed.'),
-    h('ol', { class: 'recipe' },
-      h('li', {}, h('strong', {}, 'Add Google to your iPhone'), h('span', { class: 'row-sub' }, 'iPhone Settings → Apps → Calendar → Calendar Accounts → Add Account → Google. Sign in and switch Calendars on.')),
-      h('li', {}, h('strong', {}, 'Make Google your default calendar'), h('span', { class: 'row-sub' }, 'Same page: Default Calendar → pick your Google calendar (it’s usually your email address).')),
-      h('li', {}, h('strong', {}, 'Connect your iPhone apps'), h('span', { class: 'row-sub' }, 'Set up the Brain Dump Shortcut. Every event you add then lands in Google Calendar, and invites work as normal.'))),
-    h('div', { class: 'sheet-actions' },
-      h('a', { class: 'btn primary', href: '#shortcut' }, 'Connect iPhone apps'),
-      serverGoogle ? h('button', { class: 'btn', onclick: () => connectGoogle(['calendar']) }, 'Or connect Google directly') : null));
-}
-
-function connRow(ic, label, sub, onClick) {
-  return onClick ? linkRow(ic, label, sub, onClick) : h('div', { class: 'set-row' }, h('span', { class: 'row-ic' }, icon(ic, 19)), h('div', { class: 'set-label' }, h('span', {}, label), h('span', { class: 'row-sub' }, sub)));
-}
-
 function claudeGroup(ai) {
   if (LOCAL) {
     const on = ai?.enabled !== false;
@@ -235,7 +208,7 @@ function claudeGroup(ai) {
     msg);
 }
 
-async function calendarSubscribe() {
+export async function calendarSubscribe() {
   if (LOCAL) {
     toast('This works in the full version of Brain Dump.');
     return;

@@ -51,7 +51,9 @@ interface RouteDeps {
 }
 
 export function integrationRoutes(d: RouteDeps) {
-  const pending = new Map<string, { userId: string; verifier: string; services: string[]; expires: number }>();
+  const pending = new Map<string, { userId: string; verifier: string; services: string[]; expires: number; returnTo: string }>();
+  /** Where to land after signing in: back into setup or Health, so setup continues by itself. */
+  const RETURNS = ['#setup', '#health', '#settings'];
   const fetchImpl = d.fetchImpl ?? fetch;
   const redirectUri = () => `${d.publicUrl ?? 'http://localhost:8787'}/api/integrations/google/callback`;
 
@@ -79,7 +81,8 @@ export function integrationRoutes(d: RouteDeps) {
     const verifier = randomBytes(32).toString('base64url');
     const challenge = createHash('sha256').update(verifier).digest('base64url');
     const state = randomBytes(24).toString('base64url');
-    pending.set(state, { userId: c.device.userId, verifier, services, expires: Date.now() + 10 * 60_000 });
+    const returnTo = RETURNS.includes(c.body?.returnTo) ? c.body.returnTo : '#settings';
+    pending.set(state, { userId: c.device.userId, verifier, services, expires: Date.now() + 10 * 60_000, returnTo });
     const params = new URLSearchParams({
       client_id: d.config.google.clientId,
       redirect_uri: redirectUri(),
@@ -100,9 +103,11 @@ export function integrationRoutes(d: RouteDeps) {
     const code = c.url.searchParams.get('code') ?? '';
     const p = pending.get(stateParam);
     pending.delete(stateParam);
+    const back = p?.returnTo ?? '#settings';
     const done = (ok: boolean, msg: string) => {
       c.res.writeHead(ok ? 200 : 400, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'" });
-      c.res.end(`<!doctype html><meta name="viewport" content="width=device-width"><body style="font-family:system-ui;padding:2rem"><p>${msg}</p><p><a href="/#settings">Back to Brain Dump</a></p></body>`);
+      // Straight back into Brain Dump, which carries on with setup by itself.
+      c.res.end(`<!doctype html><meta name="viewport" content="width=device-width">${ok ? `<meta http-equiv="refresh" content="1;url=/${back}">` : ''}<body style="font-family:system-ui;padding:2rem"><p>${msg}</p><p><a href="/${back}">Back to Brain Dump</a></p></body>`);
       return undefined;
     };
     if (!p || p.expires < Date.now() || !code || !d.config.google) return done(false, 'That connection link has expired. Please try again.');
@@ -131,7 +136,7 @@ export function integrationRoutes(d: RouteDeps) {
       s.version += 1;
     });
     await d.bump(p.userId);
-    return done(true, `Connected: ${granted.join(', ') || 'nothing'}. You can close this tab.`);
+    return done(true, granted.length ? 'Connected. Taking you back to Brain Dump…' : 'Google didn’t grant access, so nothing was connected.');
   });
 
   d.route('DELETE', '/api/integrations/:name', true, async (c) => {

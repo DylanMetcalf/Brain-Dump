@@ -86,6 +86,8 @@ export interface Reminder {
   updatedAt: ISODate;
   completedAt?: ISODate;
   notifiedAt?: ISODate;
+  /** Its id in the phone's Reminders/Clock, once the Brain Dump app has created it there. */
+  externalId?: string;
 }
 
 export interface ShoppingItem {
@@ -401,8 +403,12 @@ export interface UserState {
   mailbox: EmailMessage[];
   /** clientId → reply, so offline captures replayed twice never duplicate. */
   processed: { clientId: string; at: ISODate; reply: unknown }[];
-  /** Copying into the iPhone's own apps (Clock, Reminders, Calendar, Notes) via the Brain Dump Shortcut. */
+  /** Keeping the phone's own apps (Clock, Reminders, Calendar) in step, via the Brain Dump app or Shortcut. */
   phoneSync?: PhoneSync;
+  /** Guided setup: what the person chose to connect, and when setup finished. */
+  setup?: SetupState;
+  /** What each device can do (device permissions, as opposed to account connections), by device id. */
+  deviceCaps?: Record<ID, DeviceCaps>;
   /** Connected external services (tokens live in the encrypted store, never in plain logs). */
   integrations: Record<string, { connectedAt: ISODate; scopes: string[]; account?: string; data?: Record<string, unknown> }>;
 }
@@ -416,4 +422,40 @@ export interface PhoneSync {
   /** Where shopping goes in Reminders. */
   shoppingList?: string;
   lastRunAt?: ISODate;
+  /** Last time the phone confirmed a change (native app). */
+  lastOkAt?: ISODate;
+  /** Last time the phone shared its calendar (native app). */
+  calendarSyncedAt?: ISODate;
+  /** Recent failures reported by the phone, for Integration Health. */
+  failures?: { key: string; at: ISODate; error: string; needs?: string }[];
+}
+
+export type PermissionState = 'granted' | 'denied' | 'prompt' | 'unsupported' | 'limited';
+
+/** Reported by each device: what the platform offers and what the person has allowed. */
+export interface DeviceCaps {
+  deviceId: ID;
+  name?: string;
+  /** web = browser or Home Screen web app; ios = the Brain Dump iPhone app. */
+  shell: 'web' | 'ios';
+  platform: 'ios' | 'ipados' | 'macos' | 'android' | 'windows' | 'linux' | 'other';
+  osVersion?: string;
+  appVersion?: string;
+  /** Installed to the Home Screen (web) — needed for notifications on iPhone. */
+  standalone?: boolean;
+  permissions: Partial<Record<'notifications' | 'microphone' | 'speech' | 'calendar' | 'reminders' | 'contacts' | 'alarms' | 'location', PermissionState>>;
+  /** Platform features present (not permissions): voice input, app intents, widgets, alarmkit… */
+  features: string[];
+  reportedAt: ISODate;
+}
+
+export interface SetupState {
+  /** Integration ids the person chose. */
+  selected: string[];
+  startedAt: ISODate;
+  completedAt?: ISODate;
+  /** The end-to-end test passed. */
+  testedAt?: ISODate;
+  /** Integrations announced as newly available, so they're only mentioned once. */
+  offered?: string[];
 }

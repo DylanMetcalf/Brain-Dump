@@ -1,0 +1,30 @@
+name: iPhone app
+
+on:
+  push:
+    paths: ['ios/**', '.github/workflows/ios.yml']
+  pull_request:
+    paths: ['ios/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use the newest Xcode on the runner
+        run: |
+          latest=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          [ -n "$latest" ] && sudo xcode-select -s "$latest"
+          xcodebuild -version
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          cd ios && xcodegen generate
+      - name: Build for the iPhone simulator (no signing)
+        run: |
+          cd ios
+          xcodebuild -project BrainDump.xcodeproj -scheme BrainDump \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug CODE_SIGNING_ALLOWED=NO build | tail -80
+          exit ${PIPESTATUS[0]}

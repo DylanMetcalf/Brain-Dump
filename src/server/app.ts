@@ -23,6 +23,7 @@ import { integrationRoutes, providersFor, IntegrationConfig } from './integratio
 import { makeAskClaude, verifyKey } from './claude.js';
 import { makeAskOpenAI, OPENAI_VOICES, speak, verifyOpenAIKey, withBackup } from './openai.js';
 import { describeOutbox, enablePhoneSync, markSentToPhone, phoneOutbox } from '../core/phone.js';
+import { setupRoutes } from './setup.js';
 import type { AskClaude } from '../core/assist.js';
 import { isValidSubscription, PushSender, PushSubscriptionRecord } from './push.js';
 import { createHmac, randomBytes } from 'node:crypto';
@@ -750,9 +751,9 @@ export async function createApp(opts: AppOptions): Promise<App> {
     }
     // Everything new goes to the phone's own apps in the same run.
     const phone = await store.withUser(userId, async (state) => {
-      const items = phoneOutbox(state, clock());
+      const items = phoneOutbox(state, clock(), { native: c.url.searchParams.get('client') === 'native' || state.deviceCaps?.[c.device!.id]?.shell === 'ios' });
       if (items.length) {
-        markSentToPhone(state, items.map((i) => i.id), clock());
+        markSentToPhone(state, items.map((i) => i.key), clock());
         state.version++;
       } else if (state.phoneSync?.enabled) state.phoneSync.lastRunAt = clock().toISOString();
       return { items, version: state.version };
@@ -868,6 +869,62 @@ export async function createApp(opts: AppOptions): Promise<App> {
       });
       const s = await store.read(userId);
       broadcast(userId, 'sync', { version: s.version });
+    },
+  });
+
+  // ---- Integration & Setup Orchestrator ----
+  setupRoutes({
+    route: (method, path, auth, handler) => route(method, path, auth, handler as unknown as Handler),
+    store,
+    clock,
+    HttpError,
+    broadcast,
+    googleConfigured: !!opts.integrations?.google,
+    pushConfigured: !!opts.push,
+    keys: async (userId) => {
+      const secrets = await store.readSecrets(userId);
+      return {
+        anthropic: typeof secrets.anthropic?.apiKey === 'string' ? secrets.anthropic.apiKey : opts.anthropicApiKey,
+        openai: openaiKeyFrom(secrets),
+      };
+    },
+    verifyClaude: async (key) => (opts.askClaude ? { ok: true } : verifyKey(key)),
+    verifyOpenAI: (key) => verifyOpenAIKey(key, opts.fetchImpl),
+    checkGoogle: async (userId) => {
+      const state = await store.read(userId);
+      const g = state.integrations.google;
+      if (!g || !opts.integrations?.google) return undefined;
+      const secrets = await store.readSecrets(userId);
+      const p = await providersFor(state, secrets, opts.integrations, clock, opts.fetchImpl, (s) => store.writeSecrets(userId, s));
+      try {
+        if (g.scopes.includes('calendar') && p.calendar) await p.calendar.list(clock(), new Date(clock().getTime() + 86_400_000));
+        if (g.scopes.includes('gmail') && p.email) await p.email.search({ limit: 1 });
+        return { ok: true };
+      } catch (err) {
+        const msg = String((err as Error)?.message ?? err);
+        return { ok: false, error: /invalid_grant|401|revoked|expired/i.test(msg) ? 'Google sign-in expired' : msg.slice(0, 120) };
+      }
+    },
+    pushToDevice: async (userId, deviceId, title, body) => {
+      if (!opts.push) return 'none';
+      const secrets = await store.readSecrets(userId);
+      const subs: PushSubscriptionRecord[] = (secrets.push ?? []).filter((p: PushSubscriptionRecord) => p.deviceId === deviceId);
+      if (!subs.length) return 'none';
+      let result: 'ok' | 'gone' | 'error' = 'error';
+      const dead = new Set<string>();
+      for (const sub of subs) {
+        const r = await opts.push.send(sub, { title, body, tag: 'bd-test', url: '/' });
+        if (r === 'ok') result = 'ok';
+        else if (r === 'gone') {
+          dead.add(sub.endpoint);
+          if (result !== 'ok') result = 'gone';
+        }
+      }
+      if (dead.size) {
+        secrets.push = (secrets.push ?? []).filter((x: PushSubscriptionRecord) => !dead.has(x.endpoint));
+        await store.writeSecrets(userId, secrets);
+      }
+      return result;
     },
   });
 

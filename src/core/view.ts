@@ -21,5 +21,6 @@ export function clientState(s: UserState, now: Date) {
     ledger: s.ledger.slice(-200),
     notifications: s.notifications.filter((n) => n.kind !== 'system').slice(-50),
     integrations: Object.fromEntries(Object.entries(s.integrations).map(([k, v]) => [k, { connectedAt: v.connectedAt, scopes: v.scopes, account: v.account }])),
+    setup: s.setup ?? null,
   };
 }

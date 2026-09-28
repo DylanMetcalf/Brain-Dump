@@ -5,6 +5,8 @@ import { api, auth, flushQueue, openStream, queued, say, NetworkError, LOCAL } f
 import { createVoice, voiceSupported as voiceAvailable } from './voice.js';
 import { h, icon, brandMark, toast, sheet, linkIcon, greeting, fmtDay, fmtTime, isoDate } from './ui.js';
 import { loadVoiceInfo } from './speech.js';
+import { renderSetup, setupNeeded, renderHealth, renderAdvanced, healthCard, backgroundHealth, checkHealth } from './setup.js';
+import { isNative, runPhoneAgent, linkNative } from './device.js';
 import { renderSettings, renderBackupScreen, renderShortcutScreen, renderHistory, renderWelcome, enablePush, isIOS, isStandalone } from './settings.js';
 
 const voiceSupported = voiceAvailable && !LOCAL;
@@ -108,7 +110,10 @@ export async function send(text, { fromVoice = false } = {}) {
   if (r.offline) ui.online = false;
   setSession(r.sessionEnded ? null : r.sessionId);
   // Anything that should also go into the iPhone's own apps?
-  if (ui.phone?.enabled && r.actions?.length) {
+  if (isNative && r.actions?.length) {
+    // The Brain Dump iPhone app does it directly, in the background, verified. No app switching.
+    runPhoneAgent().then((res) => { if (res?.failed) checkHealth().then(() => route() === 'home' && renderHome()); });
+  } else if (ui.phone?.enabled && r.actions?.length) {
     const p = await refreshPhone();
     if (p?.pending) {
       r.links = [...(r.links ?? []), { label: `Add ${p.summary} to your iPhone`, url: PHONE_SYNC_URL }];
@@ -142,7 +147,7 @@ export function tabBar() {
   return h('nav', { class: 'tabbar', 'aria-label': 'Main' },
     TABS.map(([id, label, ic]) => id === 'talk'
       ? h('a', { href: '#talk', class: `tab tab-talk ${r === 'talk' ? 'on' : ''}`, 'aria-label': 'Talk', 'aria-current': r === 'talk' ? 'page' : undefined }, h('span', { class: 'talk-dot' }, brandMark(30, { onDark: true })))
-      : h('a', { href: `#${id}`, class: `tab ${r === id || (id === 'settings' && ['backup', 'shortcut', 'history'].includes(r)) ? 'on' : ''}`, 'aria-current': r === id ? 'page' : undefined }, icon(ic, 23), h('span', {}, label))));
+      : h('a', { href: `#${id}`, class: `tab ${r === id || (id === 'settings' && ['backup', 'shortcut', 'history', 'health', 'advanced'].includes(r)) ? 'on' : ''}`, 'aria-current': r === id ? 'page' : undefined }, icon(ic, 23), h('span', {}, label))));
 }
 
 export function page(cls, ...content) {
@@ -186,6 +191,8 @@ function renderHome() {
   ];
 
   const cards = [];
+  const health = healthCard();
+  if (health) cards.push(health);
   const setup = setupCard();
   if (setup) cards.push(setup);
   for (const key of homeSections()) {
@@ -575,9 +582,6 @@ function setupCard() {
   try { hidden = localStorage.getItem('bd.setupHidden') === 'yes'; } catch {}
   if (hidden) return null;
   const items = [];
-  if (isIOS() && !isStandalone()) items.push({ title: 'Add to your Home Screen', sub: 'Share → Add to Home Screen, then open it from there.' });
-  if (!ui.setup.push && (!isIOS() || isStandalone())) items.push({ title: 'Turn on reminders', sub: 'So they reach you with the app closed.', action: () => enablePush().then(refreshSetup) });
-  if (!ui.phone?.enabled && isIOS()) items.push({ title: 'Connect your iPhone apps', sub: 'Real alarms, Reminders, Calendar and Notes — and “Hey Siri, Brain Dump”.', href: '#shortcut' });
   if (!ui.setup.backupCode) items.push({ title: 'Save a backup code', sub: 'Your way back in on a new phone.', href: '#backup' });
   if (!items.length) return null;
   return h('section', { class: 'card setup' },
@@ -624,6 +628,9 @@ export async function renderRoute() {
   if (r === 'history') return renderHistory();
   if (r === 'backup') return renderBackupScreen();
   if (r === 'shortcut') return renderShortcutScreen();
+  if (r === 'setup') return renderSetup();
+  if (r === 'health') return renderHealth();
+  if (r === 'advanced') return renderAdvanced();
   return renderHome();
 }
 
@@ -666,9 +673,14 @@ export async function boot() {
     if (type === 'notification') onNotification(data);
   });
   app.removeAttribute('aria-busy');
+  if (isNative) linkNative(auth.token);
+  // First run: Brain Dump sets itself up. Never shown again unless she chooses to.
+  if (setupNeeded() && ['home', 'talk', 'chat'].includes(route()) && !params.has('talk')) location.hash = '#setup';
   await renderRoute();
   refreshOverview();
   refreshSetup();
+  // Quiet health check (and repair after updates / once a day); Home shows a card only if something needs her.
+  backgroundHealth().then(() => route() === 'home' && renderHome()).catch(() => {});
   if (params.has('talk')) {
     location.hash = '#talk';
     setTimeout(talkTap, 300);
@@ -676,6 +688,12 @@ export async function boot() {
 }
 
 window.addEventListener('hashchange', renderRoute);
+// Coming back to the app (e.g. from Settings after allowing something): re-check, and let the phone catch up.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !auth.token || LOCAL) return;
+  if (isNative) runPhoneAgent();
+  if (route() !== 'setup') checkHealth().then(() => route() === 'home' && renderHome()).catch(() => {});
+});
 window.addEventListener('online', async () => {
   ui.online = true;
   const replies = await flushQueue();

@@ -1,0 +1,39 @@
+name: Shortcut probe
+
+# Experiment: read Apple's action definitions and check whether a Shortcut can be signed
+# on a CI Mac (needed to hand people a ready-made, one-tap Brain Dump Shortcut).
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/shortcut-probe.yml', 'scripts/shortcut-probe.py']
+
+jobs:
+  probe:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find Apple's action definitions
+        run: |
+          sw_vers
+          find /System/Library/PrivateFrameworks -maxdepth 4 -name "WFActions*.plist" 2>/dev/null | head
+          find /System/Library/PrivateFrameworks/WorkflowKit.framework -maxdepth 3 2>/dev/null | head -40
+          which shortcuts || true
+      - name: Dump the actions Brain Dump needs
+        run: python3 scripts/shortcut-probe.py
+      - name: Try signing a tiny Shortcut
+        run: |
+          python3 - <<'EOF'
+          import plistlib
+          wf = {
+            'WFWorkflowClientVersion': '2605.0.5', 'WFWorkflowMinimumClientVersion': 900, 'WFWorkflowMinimumClientVersionString': '900',
+            'WFWorkflowIcon': {'WFWorkflowIconStartColor': 4282601983, 'WFWorkflowIconGlyphNumber': 59511},
+            'WFWorkflowImportQuestions': [], 'WFWorkflowTypes': [], 'WFWorkflowInputContentItemClasses': ['WFStringContentItem'],
+            'WFWorkflowActions': [{'WFWorkflowActionIdentifier': 'is.workflow.actions.showresult', 'WFWorkflowActionParameters': {'Text': 'hello'}}],
+          }
+          plistlib.dump(wf, open('probe.shortcut', 'wb'), fmt=plistlib.FMT_BINARY)
+          EOF
+          set +e
+          shortcuts sign --mode anyone --input probe.shortcut --output probe-signed.shortcut
+          echo "sign exit: $?"
+          ls -la probe*.shortcut
+          head -c 64 probe-signed.shortcut | xxd | head -4

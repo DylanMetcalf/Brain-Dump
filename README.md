@@ -85,9 +85,25 @@ When the rule-based interpreter can't place a thought, Claude rewrites it into p
 - **Server:** add an Anthropic API key under **Settings → Claude** (it's checked, then stored encrypted), or set `ANTHROPIC_API_KEY`. The server uses `claude-opus-5` at low effort, with server-side refusal fallbacks enabled.
 - **Phone test build:** uses the viewer's own Claude account through the page's `sample` capability, so there's no key to set up.
 
-## Talk with one tap (iPhone)
+## Brain Dump sets itself up
 
-**Settings → Talk with one tap** creates a dedicated key and walks through a Siri Shortcut (Dictate Text → POST to `/api/quick?format=text` → Speak Text). Assign it to the Action Button, Back Tap, a Home Screen or Lock Screen widget, or "Hey Siri, Brain Dump". Running it again within 10 minutes continues the same conversation, so a follow-up question can be answered. This needs the server reachable over HTTPS (see Hosting).
+First run: **Let's set up Brain Dump** → choose what to connect (discovered per device, never
+assumed) → a setup queue where each integration runs *discover → connect → authorise →
+configure → test → verify* and stops only for real platform prompts → a real end-to-end voice
+test → **Brain Dump is ready**. The **Integration & Setup Orchestrator** (`src/core/orchestrator.ts`,
+`src/server/setup.ts`, `web/setup.js`) keeps account connections separate from device
+permissions, runs health checks after updates and daily, repairs what it can (Google token
+refresh, dead notification links, failed phone changes retried) and says exactly what to tap
+when it can't. See **Settings → Health** (and **Advanced**).
+
+## iPhone app
+
+`ios/` is the native Brain Dump app (SwiftUI + WKWebView around the same screens), with a device
+agent for EventKit (Calendar, Reminders), AlarmKit (real alarms and timers, iOS 26), Contacts,
+Apple speech in and out, App Intents/App Shortcuts registered automatically (no Shortcut to
+build), a widget and a Control Centre button. See [docs/IOS_APP.md](docs/IOS_APP.md). The earlier
+hand-built Siri Shortcut still works as an optional route for the web app (Settings → Health →
+Advanced).
 
 ## Hosting
 

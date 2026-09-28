@@ -87,7 +87,8 @@ function byPermission(p: PermissionState | undefined, what: string, why: string,
       fix: { kind: 'settings', target, label: 'Open Settings' },
     };
   }
-  return { health: 'needs-you', message: `${what} needs your permission ${why}`, fix: { kind: 'permission', target, label: `Allow ${what}` } };
+  const verb = /s$/.test(what) ? 'need' : 'needs';
+  return { health: 'needs-you', message: `${what} ${verb} your permission ${why}`, fix: { kind: 'permission', target, label: `Allow ${what}` } };
 }
 
 export function integrationStatus(f: OrchestratorFacts): IntegrationStatus[] {

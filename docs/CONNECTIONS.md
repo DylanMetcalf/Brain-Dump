@@ -1,16 +1,24 @@
-# Connecting everything: the easy order
+# Connecting everything
 
-Do these in order. Steps 1–3 take about 15 minutes in total and cover almost everything.
-You (the host) do step 0 once; Nicole does the rest on her iPhone, or you do it with her.
+**Brain Dump now sets itself up.** The first time she opens it, it shows *Let's set up Brain Dump*:
+she ticks what she uses (only things her device supports are shown), and Brain Dump works through
+them. It stops only where Apple or Google genuinely needs her to tap *Allow*, then carries on by
+itself, runs a real test ("Say: *Remind me to buy milk*"), and finishes with **Talk to Brain Dump**.
+Afterwards **Settings → Health** shows every connection at a glance, with one button to fix
+anything that stops working.
+
+What's left for you (the host) is a few one-time things only you can do:
 
 | # | What | Who | Time | What it unlocks |
 |---|---|---|---|---|
 | 0 | Keys on Render | You | 5 min | Claude (understanding), ChatGPT (natural voice) |
-| 1 | Install + notifications | Her | 2 min | The app, reminders arriving with the app closed |
-| 2 | Google on the iPhone | Her | 2 min | Google Calendar (and invites) with no developer setup |
-| 3 | The Brain Dump Shortcut | You build once, she installs | 10 min once, then 1 tap | "Hey Siri, Brain Dump", real alarms, Reminders, Calendar, Notes |
-| 4 | A nicer voice | Either | 1 min | Replies that don't sound robotic |
-| 5 | Gmail (optional) | You | 15 min | "Check my email" |
+| 1 | **The Brain Dump iPhone app**, see [IOS_APP.md](IOS_APP.md) | You, once | 20 min | Siri with nothing to build, real alarms, Reminders, her real Calendar, Contacts, widget |
+| 2 | Google on her iPhone (Settings → Calendar → Accounts) | Her | 2 min | Her Google Calendar is then her iPhone calendar, so Brain Dump manages it |
+| 3 | Gmail (optional) | You | 15 min | "Check my email" |
+
+Without the iPhone app, the web app still does all of Brain Dump's thinking, and the optional
+Brain Dump Shortcut below (Settings → Health → Advanced → Legacy Siri Shortcut) can copy things
+into the phone's apps. The rest of this page covers those manual routes.
 
 ---
 

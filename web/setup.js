@@ -378,8 +378,14 @@ async function renderTest() {
   const after = h('div', { class: 'setup-after' });
   let voice;
 
-  async function run(text) {
-    if (canTalk) mark('voice', true, 'Heard');
+  async function run(text, { typed = false } = {}) {
+    if (canTalk) {
+      if (typed) {
+        const st = steps.get('voice');
+        st.className = 'q-status later';
+        st.replaceChildren('Typed instead');
+      } else mark('voice', true, 'Heard');
+    }
     live.textContent = `“${text}”`;
     mark('understand', null, 'Checking');
     const before = Date.now() - 5000;
@@ -417,7 +423,7 @@ async function renderTest() {
     return { text: passed ? 'Done — that works.' : 'Hmm, something didn’t work.' };
   }
 
-  const typeBox = h('form', { class: 'hero-type setup-type', onsubmit: (e) => { e.preventDefault(); const v = e.target.elements.t.value.trim(); if (v) run(v); } },
+  const typeBox = h('form', { class: 'hero-type setup-type', onsubmit: (e) => { e.preventDefault(); const v = e.target.elements.t.value.trim(); if (v) run(v, { typed: true }); } },
     h('input', { name: 't', placeholder: 'Remind me to buy milk', 'aria-label': 'Type it' }), h('button', { class: 'icon-btn accent', 'aria-label': 'Send' }, icon('send', 18)));
 
   const orb = canTalk ? h('button', { id: 'orb', class: 'orb small', 'aria-label': 'Tap to talk', onclick: () => {

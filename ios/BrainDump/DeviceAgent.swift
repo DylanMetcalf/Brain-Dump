@@ -383,7 +383,7 @@ enum AlarmScheduler {
     static func schedule(title: String, at date: Date, countdown: Double?) async throws -> UUID {
         let stop = AlarmButton(text: "Stop", textColor: .white, systemImageName: "stop.circle")
         let alert = AlarmPresentation.Alert(title: LocalizedStringResource(stringLiteral: title.isEmpty ? "Brain Dump" : title), stopButton: stop)
-        let attributes = AlarmAttributes<BrainDumpAlarmMetadata>(presentation: AlarmPresentation(alert: alert), tintColor: Color(red: 0.30, green: 0.42, blue: 0.28))
+        let attributes = AlarmAttributes<BrainDumpAlarmMetadata>(presentation: AlarmPresentation(alert: alert), tintColor: Color(red: 0.94, green: 0.31, blue: 0.43))
         let id = UUID()
         let configuration: AlarmManager.AlarmConfiguration<BrainDumpAlarmMetadata>
         if let countdown {

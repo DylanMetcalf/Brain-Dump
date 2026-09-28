@@ -44,6 +44,8 @@ export interface AppOptions {
   openaiApiKey?: string;
   /** An iCloud link to the ready-made Brain Dump Shortcut, so others install it in one tap. */
   shortcutUrl?: string;
+  /** TestFlight (or App Store) link to the Brain Dump iPhone app. */
+  iosAppUrl?: string;
   /** Test hook: replaces the real Claude call. */
   askClaude?: (userId: string) => AskClaude | undefined;
   tickIntervalMs?: number;
@@ -749,8 +751,12 @@ export async function createApp(opts: AppOptions): Promise<App> {
       c.res.end(r!.text);
       return undefined;
     }
+    // A test from the app's own screen: answer, but don't hand anything over.
+    if (c.url.searchParams.get('test') === '1') return { text: r?.text ?? '', question: !!r?.question, listen: 'no', done: true, phone: [] };
     // Everything new goes to the phone's own apps in the same run.
     const phone = await store.withUser(userId, async (state) => {
+      // The Shortcut really exists and runs: only now may the app hand things to it by itself.
+      if (c.device!.name === 'Siri Shortcut' && state.phoneSync) state.phoneSync.shortcutSeenAt = clock().toISOString();
       const items = phoneOutbox(state, clock(), { native: c.url.searchParams.get('client') === 'native' || state.deviceCaps?.[c.device!.id]?.shell === 'ios' });
       if (items.length) {
         markSentToPhone(state, items.map((i) => i.key), clock());
@@ -780,6 +786,8 @@ export async function createApp(opts: AppOptions): Promise<App> {
       pending: items.length,
       summary: describeOutbox(items),
       lastRunAt: state.phoneSync?.lastRunAt ?? null,
+      /** The Brain Dump Shortcut has actually run on this account. Until then the app never opens Shortcuts. */
+      verified: !!state.phoneSync?.shortcutSeenAt,
       shoppingList: state.phoneSync?.shoppingList ?? 'Shopping',
       shortcutName: 'Brain Dump',
       shortcutUrl: opts.shortcutUrl ?? null,
@@ -881,6 +889,7 @@ export async function createApp(opts: AppOptions): Promise<App> {
     broadcast,
     googleConfigured: !!opts.integrations?.google,
     pushConfigured: !!opts.push,
+    iosAppUrl: opts.iosAppUrl,
     keys: async (userId) => {
       const secrets = await store.readSecrets(userId);
       return {

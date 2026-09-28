@@ -422,6 +422,8 @@ export interface PhoneSync {
   /** Where shopping goes in Reminders. */
   shoppingList?: string;
   lastRunAt?: ISODate;
+  /** Last time the Brain Dump Shortcut itself called in (proves it's installed). */
+  shortcutSeenAt?: ISODate;
   /** Last time the phone confirmed a change (native app). */
   lastOkAt?: ISODate;
   /** Last time the phone shared its calendar (native app). */

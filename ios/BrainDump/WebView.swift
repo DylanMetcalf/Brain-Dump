@@ -26,7 +26,8 @@ struct BrainWebView: UIViewRepresentable {
         web.backgroundColor = UIColor(named: "LaunchBackground")
         if #available(iOS 16.4, *) { web.isInspectable = true }
         model.attach(web)
-        web.load(URLRequest(url: BrainDumpAPI.server))
+        web.load(URLRequest(url: model.startURL ?? BrainDumpAPI.server))
+        model.startURL = nil
         return web
     }
 

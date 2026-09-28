@@ -75,21 +75,25 @@ export function icon(name, size = 22) {
   return svg;
 }
 
-/** The Brain Dump mark: a thought bubble with a sprig. Used for the talk button and header. */
+/**
+ * The Brain Dump mark: thoughts rising out of your head — three bubbles and a spark.
+ * onDark: white bubbles with a gradient spark (on gradient buttons); otherwise gradient bubbles.
+ */
+let markSeq = 0;
 export function brandMark(size = 28, { onDark = false } = {}) {
+  const id = `bdg${++markSeq}`;
   const svg = document.createElementNS(SVG, 'svg');
-  svg.setAttribute('viewBox', '0 0 512 512');
+  svg.setAttribute('viewBox', '150 150 720 720');
   svg.setAttribute('width', String(size));
   svg.setAttribute('height', String(size));
   svg.setAttribute('aria-hidden', 'true');
-  const cloud = onDark ? '#ffffff' : 'var(--accent)';
-  const sprig = onDark ? 'var(--accent)' : '#ffffff';
-  svg.innerHTML = `<g transform="translate(0,-16)">
-    <path d="M170 318c-38 0-66-27-66-62 0-33 25-59 58-62 8-42 45-72 90-72 38 0 71 22 85 55 5-1 10-1 15-1 44 0 78 33 78 74s-34 68-78 68H170z" fill="${cloud}"/>
-    <circle cx="176" cy="372" r="20" fill="${cloud}"/><circle cx="138" cy="410" r="11" fill="${cloud}"/>
-    <path d="M256 290c0-40 6-70 22-100" fill="none" stroke="${sprig}" stroke-width="12" stroke-linecap="round"/>
-    <path d="M262 244c-26-4-44-20-48-44 26 2 44 18 48 44z" fill="${sprig}"/>
-    <path d="M270 212c20-12 44-12 62 4-20 14-44 12-62-4z" fill="${sprig}"/></g>`;
+  const bubble = onDark ? '#ffffff' : `url(#${id})`;
+  const spark = onDark ? `url(#${id})` : '#ffffff';
+  svg.innerHTML = `<defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFB36B"/><stop offset=".5" stop-color="#FF5F6D"/><stop offset="1" stop-color="#8E54E9"/></linearGradient></defs>
+    <circle cx="282" cy="758" r="60" fill="${bubble}" opacity=".55"/>
+    <circle cx="418" cy="598" r="98" fill="${bubble}" opacity=".8"/>
+    <circle cx="610" cy="396" r="196" fill="${bubble}"/>
+    <path d="M610 290c13 66 42 94 106 106-64 12-93 41-106 106-13-65-42-94-106-106 64-12 93-40 106-106z" fill="${spark}"/>`;
   return svg;
 }
 

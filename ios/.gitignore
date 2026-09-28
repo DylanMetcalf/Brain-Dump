@@ -2,3 +2,4 @@ BrainDump.xcodeproj/
 build/
 DerivedData/
 *.xcuserstate
+Local.xcconfig

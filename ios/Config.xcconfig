@@ -1,6 +1,13 @@
 // Your Brain Dump server (the Render address), e.g. https:/$()/brain-dump-abcd.onrender.com
-// (the $() stops Xcode treating // as a comment).
+// (the $() stops Xcode treating // as a comment). The TestFlight workflow fills these in for you.
 BRAIN_DUMP_SERVER = https:/$()/brain-dump.onrender.com
 
-// Your Apple Developer Team ID (Xcode → Settings → Accounts), for installing on a phone.
+// Your Apple Developer Team ID (developer.apple.com → Membership).
 BD_TEAM_ID =
+
+// Unique to your Apple account: the app's identifier, and the group the app and widget share.
+BD_BUNDLE_ID = app.braindump.BrainDump
+BD_APP_GROUP = group.$(BD_BUNDLE_ID)
+
+// Optional local overrides (not committed).
+#include? "Local.xcconfig"

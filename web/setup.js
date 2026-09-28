@@ -74,11 +74,22 @@ function shell(...content) {
 // ---- 1. Intro -----------------------------------------------------------------
 
 function renderIntro() {
+  const name = h('input', { class: 'big-input', placeholder: 'Your first name', autocomplete: 'given-name', value: ui.state?.profile?.displayName ?? '', 'aria-label': 'Your first name' });
+  const go = async () => {
+    const v = name.value.trim();
+    if (v && v !== ui.state?.profile?.displayName) await api('/api/profile', { method: 'PATCH', body: { displayName: v } }).catch(() => {});
+    if (v && ui.state) ui.state.profile.displayName = v;
+    flow.stage = 'choose';
+    saveFlow();
+    await renderChoose();
+  };
   shell(
     h('div', { class: 'setup-mark' }, brandMark(64, { onDark: true })),
-    h('h1', { class: 'setup-title' }, 'Let’s set up Brain Dump'),
-    h('p', { class: 'setup-lead' }, 'I work best when I can connect to the tools you already use. Choose what you’d like me to work with — I’ll handle the setup. If Apple needs you to approve something, I’ll let you know.'),
-    h('button', { class: 'btn primary big', onclick: async () => { flow.stage = 'choose'; saveFlow(); await renderChoose(); } }, 'Let’s go'),
+    h('h1', { class: 'setup-title center' }, 'Hi, I’m Brain Dump'),
+    h('p', { class: 'setup-lead center' }, 'Tell me anything, however it comes out, and I’ll take care of it. First, let’s connect me to the things you already use. I’ll do the setting up.'),
+    h('form', { class: 'form', onsubmit: (e) => { e.preventDefault(); go(); } },
+      h('label', { class: 'field' }, 'What should I call you?', name),
+      h('button', { class: 'btn primary big', type: 'submit' }, 'Let’s go')),
     h('button', { class: 'btn text', onclick: skipSetup }, 'Skip for now'));
 }
 
@@ -283,8 +294,8 @@ async function runAgent(id) {
     }
     if (fix.kind === 'install') {
       setRow(id, 'needs');
-      const v = await ask(id, s.message, [['Show me how', 'how', true], ['Later', 'skip']]);
-      if (v === 'how') installSheet(fix.target);
+      const v = await ask(id, s.message, [[fix.target === 'home-screen' ? 'Guide me' : fix.label, 'how', true], ['Later', 'skip']]);
+      if (v === 'how') installSheet(fix.target, fix);
       return 'later';
     }
     break;
@@ -333,19 +344,84 @@ export async function subscribePush() {
   }
 }
 
-function installSheet(target) {
-  if (target === 'home-screen') {
-    sheet('Add Brain Dump to your Home Screen',
-      h('ol', { class: 'recipe' },
-        h('li', {}, h('strong', {}, 'Tap the Share button'), h('span', { class: 'row-sub' }, 'The square with an arrow, at the bottom of Safari.')),
-        h('li', {}, h('strong', {}, 'Choose “Add to Home Screen”'), h('span', { class: 'row-sub' }, 'Scroll down if you don’t see it.')),
-        h('li', {}, h('strong', {}, 'Open Brain Dump from the new icon'), h('span', { class: 'row-sub' }, 'I’ll carry on from where we left off.'))));
-  } else {
-    sheet('The Brain Dump iPhone app',
-      h('p', {}, 'The iPhone app is what lets me set real alarms, put reminders in Reminders, manage your calendar, find people in Contacts and answer “Hey Siri, Brain Dump” — all with nothing for you to build.'),
-      h('p', { class: 'muted-text' }, 'Whoever looks after your Brain Dump installs it from TestFlight (see docs/IOS_APP.md). Everything you’ve already told me carries over.'),
-      h('a', { class: 'btn', href: '#shortcut' }, 'Or use the optional Shortcut'));
-  }
+/** "Show me how", done for her: a guide that performs each step it can, and points at the ones only she can tap. */
+function installSheet(target, fix) {
+  if (target === 'home-screen') return homeScreenCoach();
+  return iphoneAppGuide(fix?.url);
+}
+
+/**
+ * Safari won't let any website add itself to the Home Screen, so this points at exactly
+ * where to tap, one step at a time, with a picture of what she'll see.
+ */
+function homeScreenCoach() {
+  const steps = [
+    { title: 'Tap Share', text: 'It’s the square with the arrow, at the bottom of Safari.', art: 'share' },
+    { title: 'Tap “Add to Home Screen”', text: 'Scroll down the list a little if you don’t see it.', art: 'add' },
+    { title: 'Tap “Add”', text: 'Then open Brain Dump from its new icon. I’ll pick up where we left off.', art: 'confirm' },
+  ];
+  let i = 0;
+  const art = (kind) => {
+    if (kind === 'share') return h('div', { class: 'coach-art' }, h('div', { class: 'mock-bar' }, h('span', { class: 'mock-btn' }), h('span', { class: 'mock-btn' }), h('span', { class: 'mock-btn share' }, shareGlyph()), h('span', { class: 'mock-btn' }), h('span', { class: 'mock-btn' })));
+    if (kind === 'add') return h('div', { class: 'coach-art' }, h('div', { class: 'mock-sheet' }, h('div', { class: 'mock-row' }, 'Copy'), h('div', { class: 'mock-row' }, 'Add to Reading List'), h('div', { class: 'mock-row hi' }, 'Add to Home Screen', h('span', { class: 'mock-plus' }, '+')), h('div', { class: 'mock-row' }, 'Find on Page')));
+    return h('div', { class: 'coach-art' }, h('div', { class: 'mock-add' }, h('span', {}, 'Cancel'), h('strong', {}, 'Add to Home Screen'), h('span', { class: 'mock-add-btn' }, 'Add')), h('div', { class: 'mock-icon' }, h('img', { src: '/icon-180.png?v=4', alt: '' }), h('span', {}, 'Brain Dump')));
+  };
+  const wrap = h('div', { class: 'coach', role: 'dialog', 'aria-label': 'Add to Home Screen' });
+  const draw = () => {
+    const st = steps[i];
+    wrap.replaceChildren(
+      h('div', { class: 'coach-card' },
+        h('div', { class: 'coach-dots' }, steps.map((_, k) => h('span', { class: k === i ? 'on' : '' }))),
+        art(st.art),
+        h('h2', {}, `${i + 1}. ${st.title}`),
+        h('p', {}, st.text),
+        h('div', { class: 'coach-actions' },
+          h('button', { class: 'btn text', onclick: () => wrap.remove() }, 'Close'),
+          i < steps.length - 1 ? h('button', { class: 'btn primary', onclick: () => { i++; draw(); } }, 'Next') : h('button', { class: 'btn primary', onclick: () => wrap.remove() }, 'Got it'))),
+      i === 0 ? h('div', { class: 'coach-arrow', 'aria-hidden': 'true' }, '↓') : null);
+  };
+  draw();
+  document.body.append(wrap);
+}
+
+function shareGlyph() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', '22');
+  svg.setAttribute('height', '22');
+  svg.innerHTML = '<path d="M12 3v12M8 7l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 11H5v10h14V11h-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>';
+  return svg;
+}
+
+/** The iPhone app: install, then sign in by itself (no codes to type), then it sets itself up. */
+function iphoneAppGuide(url) {
+  const done = new Set();
+  const body = h('div', { class: 'guide' });
+  const step = (n, title, sub, button) => h('div', { class: `guide-step ${done.has(n) ? 'done' : ''}` },
+    h('span', { class: 'guide-n' }, done.has(n) ? icon('check', 16) : String(n)),
+    h('div', { class: 'q-main' }, h('strong', {}, title), h('span', { class: 'q-sub' }, sub), button ?? null));
+  const draw = () => body.replaceChildren(
+    h('p', { class: 'sheet-sub' }, 'The iPhone app lets me set real alarms, put reminders in Reminders, manage your calendar, find people in Contacts and answer “Hey Siri, Brain Dump” — with nothing for you to build.'),
+    url
+      ? step(1, 'Install Brain Dump', 'Opens TestFlight, Apple’s app for new apps. If it asks, get TestFlight first, then tap Install.',
+          h('a', { class: 'btn primary', href: url, target: '_blank', rel: 'noopener', onclick: () => { done.add(1); setTimeout(draw, 300); } }, 'Install from TestFlight'))
+      : step(1, 'Install Brain Dump', 'It hasn’t been sent to TestFlight yet. Whoever looks after your Brain Dump can do that in a few minutes (docs/IOS_APP.md).'),
+    step(2, 'Sign in', 'I’ll open the app and sign you in. No codes to type — everything you’ve told me is already there.',
+      h('button', { class: 'btn', onclick: async (e) => {
+        e.target.disabled = true;
+        try {
+          const r = await api('/api/auth/pair/start', { body: {} });
+          done.add(2);
+          location.href = `braindump://pair?code=${encodeURIComponent(r.code)}`;
+          setTimeout(draw, 800);
+        } catch (err) {
+          toast(err.message);
+          e.target.disabled = false;
+        }
+      } }, 'Open and sign in')),
+    step(3, 'Allow what it asks', 'Brain Dump sets itself up: Calendar, Reminders, Contacts, alarms and Siri. Tap Allow when Apple asks — that’s it.'));
+  draw();
+  sheet('Get Brain Dump for iPhone', body);
 }
 
 // ---- 4. The real end-to-end test ------------------------------------------------
@@ -503,7 +579,7 @@ export async function performFix(s, { returnTo = '#health' } = {}) {
     else toast(r.error);
     return;
   } else if (f.kind === 'install') {
-    installSheet(f.target);
+    installSheet(f.target, f);
     return;
   } else if (f.kind === 'open') {
     location.hash = f.target;
@@ -589,7 +665,7 @@ export function healthCard() {
   const p = r.problems?.find((x) => x.fix);
   if (p) {
     return h('section', { class: 'card setup' },
-      h('div', { class: 'card-head' }, h('h2', {}, `${p.label} needs you`)),
+      h('div', { class: 'card-head' }, h('h2', {}, `${p.label} need${/s$/.test(p.label) ? '' : 's'} you`)),
       h('p', {}, p.message),
       h('div', { class: 'row-actions' }, h('button', { class: 'pill-btn accent', onclick: async (e) => { e.target.disabled = true; await performFix(p, { returnTo: '#health' }); location.hash = '#home'; } }, p.fix.label), h('a', { class: 'pill-btn', href: '#health' }, 'Health')));
   }

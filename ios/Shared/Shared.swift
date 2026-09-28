@@ -3,7 +3,8 @@ import AppIntents
 
 /// Things the app, its Siri actions and the widget share.
 enum Shared {
-    static let group = "group.app.braindump"
+    /// Set per build from BD_APP_GROUP (Info.plist BDAppGroup), so each Apple account can use its own.
+    static let group = (Bundle.main.object(forInfoDictionaryKey: "BDAppGroup") as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "group.app.braindump"
     static var defaults: UserDefaults { UserDefaults(suiteName: group) ?? .standard }
     static let talkURL = URL(string: "braindump://talk")!
     static let chatURL = URL(string: "braindump://chat")!

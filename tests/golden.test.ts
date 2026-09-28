@@ -13,7 +13,7 @@ describe('GOLDEN SUITE', () => {
 
   it('Capture — "I need to buy eye patches."', async () => {
     const r = await h.say('I need to buy eye patches.');
-    expect(r.text).toBe('Added eye patches.');
+    expect(r.text).toBe('Added eye patches to your shopping list.');
     expect(h.state.shopping.find((s) => s.name === 'eye patches')?.status).toBe('needed');
   });
 

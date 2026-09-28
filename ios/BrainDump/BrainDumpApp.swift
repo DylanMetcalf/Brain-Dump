@@ -37,6 +37,8 @@ final class AppModel: ObservableObject {
     static let shared = AppModel()
     let bridge = Bridge()
     private weak var web: WKWebView?
+    /// Used for the first load (e.g. a sign-in link that arrived before the page loaded).
+    var startURL: URL?
 
     init() {
         NotificationCenter.default.addObserver(forName: .brainDumpOpenRoute, object: nil, queue: .main) { note in
@@ -51,6 +53,14 @@ final class AppModel: ObservableObject {
 
     func open(url: URL) {
         guard url.scheme == "braindump" else { return }
+        // braindump://pair?code=123456 signs this app in with no typing (sent from Brain Dump on the web).
+        if url.host == "pair",
+           let code = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "code" })?.value,
+           code.count == 6, code.allSatisfy(\.isNumber) {
+            let target = URL(string: BrainDumpAPI.server.absoluteString + "?pair=\(code)")!
+            if let web { web.load(URLRequest(url: target)) } else { startURL = target }
+            return
+        }
         open(route: url.host ?? "talk")
     }
 

@@ -23,3 +23,6 @@ services:
       # Optional: iCloud link to your finished Brain Dump Shortcut, so others install it in one tap.
       - key: SHORTCUT_URL
         sync: false
+      # Optional: the TestFlight link for the Brain Dump iPhone app (docs/IOS_APP.md step 7).
+      - key: TESTFLIGHT_URL
+        sync: false

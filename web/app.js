@@ -7,7 +7,7 @@ import { h, icon, brandMark, toast, sheet, linkIcon, greeting, fmtDay, fmtTime, 
 import { loadVoiceInfo } from './speech.js';
 import { renderSetup, setupNeeded, renderHealth, renderAdvanced, healthCard, backgroundHealth, checkHealth } from './setup.js';
 import { isNative, runPhoneAgent, linkNative } from './device.js';
-import { renderSettings, renderBackupScreen, renderShortcutScreen, renderHistory, renderWelcome, enablePush, isIOS, isStandalone } from './settings.js';
+import { deviceLabel, renderSettings, renderBackupScreen, renderShortcutScreen, renderHistory, renderWelcome, enablePush, isIOS, isStandalone } from './settings.js';
 
 const voiceSupported = voiceAvailable && !LOCAL;
 const params = new URLSearchParams(location.search);
@@ -63,7 +63,7 @@ const voice = createVoice({
   },
   speakReplies: () => ui.state?.profile?.preferences?.voiceReplies !== false,
   afterReply: (r) => {
-    if (!r?.question && autoPhone() && isIOS() && r?.links?.some((l) => l.url === PHONE_SYNC_URL)) location.href = PHONE_SYNC_URL;
+    if (!r?.question && ui.phone?.verified && autoPhone() && isIOS() && r?.links?.some((l) => l.url === PHONE_SYNC_URL)) location.href = PHONE_SYNC_URL;
   },
 });
 
@@ -113,7 +113,8 @@ export async function send(text, { fromVoice = false } = {}) {
   if (isNative && r.actions?.length) {
     // The Brain Dump iPhone app does it directly, in the background, verified. No app switching.
     runPhoneAgent().then((res) => { if (res?.failed) checkHealth().then(() => route() === 'home' && renderHome()); });
-  } else if (ui.phone?.enabled && r.actions?.length) {
+  } else if (ui.phone?.enabled && ui.phone?.verified && r.actions?.length) {
+    // Only once the Brain Dump Shortcut has proved it's installed — never send her to an empty Shortcuts app.
     const p = await refreshPhone();
     if (p?.pending) {
       r.links = [...(r.links ?? []), { label: `Add ${p.summary} to your iPhone`, url: PHONE_SYNC_URL }];
@@ -655,6 +656,19 @@ let closeStream = () => {};
 
 export async function boot() {
   app.setAttribute('aria-busy', 'true');
+  // A one-time sign-in link (?pair=123456, from "Open and sign in"): sign this device in, no typing.
+  const pairCode = params.get('pair');
+  if (pairCode && /^\d{6}$/.test(pairCode)) {
+    params.delete('pair');
+    history.replaceState(null, '', location.pathname + location.hash);
+    try {
+      const r = await api('/api/auth/pair/complete', { body: { code: pairCode, deviceName: deviceLabel() } });
+      auth.token = r.token;
+      toast('You’re signed in.');
+    } catch {
+      toast('That sign-in link has expired. Open it again from Brain Dump on your other device.');
+    }
+  }
   if (!auth.token) {
     app.removeAttribute('aria-busy');
     return renderWelcome();

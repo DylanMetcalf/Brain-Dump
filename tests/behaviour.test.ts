@@ -48,7 +48,7 @@ describe('behavioural intelligence', () => {
     // idempotent
     expect((await tick(h.a, h.clock.now)).notifications.filter((n) => n.key === prep.key)).toHaveLength(0);
     const act = await h.a.actOnNotification(prep.id, 'add', h.clock.now);
-    expect(act.text).toMatch(/Added calisthenics tomorrow at 8 AM/);
+    expect(act.text).toMatch(/Added calisthenics to your calendar for tomorrow at 8 AM/);
 
     // AUTOMATED: user now allows it explicitly.
     routine.status = 'automated';

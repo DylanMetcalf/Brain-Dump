@@ -2,7 +2,10 @@ import WidgetKit
 import SwiftUI
 import AppIntents
 
-private let sage = Color(red: 0.30, green: 0.42, blue: 0.28)
+/// The Brain Dump sunset: peach → coral → violet.
+private let brandGradient = LinearGradient(
+    colors: [Color(red: 1.0, green: 0.70, blue: 0.42), Color(red: 1.0, green: 0.37, blue: 0.43), Color(red: 0.56, green: 0.33, blue: 0.91)],
+    startPoint: .topLeading, endPoint: .bottomTrailing)
 
 struct TalkEntry: TimelineEntry {
     let date: Date
@@ -39,7 +42,7 @@ struct TalkWidgetView: View {
         default:
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Image(systemName: "mic.fill").font(.title3.weight(.semibold))
+                    Image(systemName: "sparkles").font(.title3.weight(.semibold))
                     Spacer()
                     if let n = entry.snapshot?.needs, n > 0 {
                         Text("\(n)").font(.caption.bold()).padding(.horizontal, 7).padding(.vertical, 2).background(.white.opacity(0.25), in: Capsule())
@@ -61,7 +64,7 @@ struct TalkWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "app.braindump.talk", provider: TalkProvider()) { entry in
             TalkWidgetView(entry: entry)
-                .containerBackground(sage, for: .widget)
+                .containerBackground(brandGradient, for: .widget)
         }
         .configurationDisplayName("Talk to Brain Dump")
         .description("One tap to start talking, and what’s next.")

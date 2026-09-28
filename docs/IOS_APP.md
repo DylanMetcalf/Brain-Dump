@@ -32,35 +32,60 @@ What Did You Handle?, Add Reminder, Check Calendar, Start Conversation, Brain Du
 After that she never sees setup again, unless a permission is switched off, something stops
 working, or something new becomes available. Then Home shows one card with one button.
 
-## Installing it (you, once)
+## Getting it onto her phone: no Mac needed
 
-You need a Mac with **Xcode 26** (free from the Mac App Store) and an Apple ID.
+GitHub builds the app on its own Mac, signs it with your Apple account and sends it to
+**TestFlight** (Apple's official way to hand out an app before it's in the App Store).
+She taps one link and it installs like any app, and updates arrive by themselves.
 
-1. Terminal:
-   ```sh
-   brew install xcodegen
-   cd brain-dump/ios
-   ```
-2. Open `Config.xcconfig` and set:
-   - `BRAIN_DUMP_SERVER = https:/$()/your-address.onrender.com` (keep the `$()`)
-   - `BD_TEAM_ID =` your Team ID (Xcode → Settings → Accounts → your Apple ID → Team)
-3. `xcodegen generate && open BrainDump.xcodeproj`
-4. Plug in her iPhone (or use Wi-Fi pairing), pick it at the top of Xcode, press **Run** (▶).
-   On the phone: Settings → General → VPN & Device Management → trust your developer profile.
+### One-time setup (you, about 30 minutes, once)
 
-**Free Apple ID:** the app runs for 7 days, then needs re-running from Xcode.
-**Apple Developer Program ($99/year):** use **Product → Archive → Distribute → TestFlight**. She
-installs **TestFlight** from the App Store, taps your invite, and gets updates automatically.
-That's the recommended route.
+1. **Apple Developer Program**: developer.apple.com/programs → Enroll ($99/year). Approval is
+   usually same-day. Note your **Team ID** (developer.apple.com → Account → Membership).
+2. **Register the app's ID**: developer.apple.com → Certificates, IDs & Profiles → Identifiers → **+** →
+   App IDs → App. Bundle ID (explicit): `com.<your-github-name>.braindump` (all lower case). Under
+   Capabilities tick **App Groups**. Save.
+3. **Create the app**: appstoreconnect.apple.com → Apps → **+ New App** → iOS, name *Brain Dump*,
+   pick the bundle ID from step 2, SKU `braindump`.
+4. **API key** (lets GitHub sign and upload for you): App Store Connect → Users and Access →
+   Integrations → App Store Connect API → **+** → name *GitHub*, access **Admin** → Generate →
+   **Download API Key** (the `.p8` file; you can only download it once). Note the **Key ID** and
+   the **Issuer ID** shown above the list.
+5. **Give GitHub the keys**: your repository on github.com → Settings → Secrets and variables →
+   Actions:
+   - *Secrets*: `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8` (open the .p8 file in a text editor
+     and paste everything, including the BEGIN/END lines), `APPLE_TEAM_ID`.
+   - *Variables*: `BRAIN_DUMP_SERVER` = your Render address (e.g. `https://brain-dump-abcd.onrender.com`).
+     Only if your bundle ID differs from step 2's pattern: `IOS_BUNDLE_ID`.
+6. **Ship it**: github.com → your repository → Actions → **Ship iPhone app to TestFlight** →
+   Run workflow. About 10 minutes later the build shows in App Store Connect → TestFlight.
+   (After that it ships itself whenever the app changes on `main`.)
+7. **Invite her**: App Store Connect → your app → TestFlight → Internal Testing → **+** group →
+   add her Apple ID email (add her under Users and Access first, role *Customer Support* is
+   enough). Or create a **public link** under External Testing (Apple reviews the first build,
+   usually within a day) and put it on Render as `TESTFLIGHT_URL`.
 
-The App Group (`group.app.braindump`) and bundle id (`app.braindump.BrainDump`) are set in
-`project.yml`. If Xcode says the id is taken, change `bundleIdPrefix` and the group name
-(`group.<your prefix>`) in `project.yml`, `Shared/Shared.swift` and both entitlements.
+### What she does
+
+1. In Brain Dump (web), setup offers **Get the iPhone app** → **Install from TestFlight**
+   (or she taps the email invite) → *Install*.
+2. **Open and sign in**: Brain Dump opens the new app and signs her in by itself. No codes.
+3. The app sets itself up: tap **Allow** for Calendar, Reminders, Contacts, alarms and the
+   microphone. Siri's Brain Dump actions are already there. "Hey Siri, talk to Brain Dump."
+
+TestFlight builds last 90 days; each new build (automatic on changes) resets that.
+
+### Building it yourself on a Mac instead
+
+`brew install xcodegen && cd ios && xcodegen generate && open BrainDump.xcodeproj`, set
+`BD_TEAM_ID`, `BD_BUNDLE_ID` and `BRAIN_DUMP_SERVER` in `Config.xcconfig` (or `Local.xcconfig`),
+pick her phone and press Run. With a free Apple ID the app lasts 7 days.
 
 ## Signing in
 
-She signs in once, inside the app, the same way as on the web ("I already use Brain Dump" plus the
-6-digit code from Settings → Add another device, or her backup code). Everything she's already
+She's signed in automatically when she taps **Open and sign in** in Brain Dump on the web (a
+one-time link). Otherwise: "I already use Brain Dump" plus the 6-digit code from Settings →
+Add another device, or her backup code. Everything she's already
 told Brain Dump is there. Each device keeps its own permissions: allowing Calendar on the iPhone
 doesn't touch any other device.
 

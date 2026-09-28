@@ -75,7 +75,16 @@ describe('phone actions a real person asks for', () => {
   it('explicit notes are saved even when they sound like questions', async () => {
     const h = setup();
     const r = await h.say('Make a note: what colour should the hallway be?');
-    expect(r.text).toBe('Saved to your notes.');
+    expect(r.text).toBe('Got it — that’s in your notes.');
     expect(h.state.notes[0].text).toMatch(/hallway/);
+  });
+});
+
+describe('sounds like a person', () => {
+  it('family names are names: "call mum" → "call Mum"', async () => {
+    const { setup } = await import('./helpers.js');
+    const h = setup();
+    const r = await h.say('Remind me to call mum tomorrow at 9');
+    expect(r.text).toMatch(/call Mum tomorrow at 9 AM/);
   });
 });

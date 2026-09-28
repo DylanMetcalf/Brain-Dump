@@ -909,7 +909,7 @@ export class Assistant {
     }
     if (toAdd.length) {
       const names = toAdd.map((i) => (i.quantity ? `${i.quantity} ${i.name}` : i.name));
-      await this.runPlan({ type: 'shopping.add', items: toAdd }, t, { done: `Added ${listJoin(names)}.` });
+      await this.runPlan({ type: 'shopping.add', items: toAdd }, t, { done: `Added ${listJoin(names)} to your shopping list.` });
     }
     if (already.length) t.out.lines.push(`${capitalize(listJoin(already))} ${already.length > 1 ? 'are' : 'is'} already on your list.`);
   }
@@ -1393,7 +1393,7 @@ export class Assistant {
         summary: `Added ${capitalize(title)} ${whenText}`,
       },
       t,
-      { done: `Added ${lcTitle(title)} ${whenText}.${conflict}` },
+      { done: `Added ${lcTitle(title)} to your calendar for ${whenText}.${conflict}` },
     );
   }
 
@@ -2386,7 +2386,7 @@ export class Assistant {
       t.out.lines.push("Sorry, I didn't catch that.");
       return;
     }
-    await this.runPlan({ type: 'note.create', text, idea: th.idea }, t, { done: th.idea ? 'Saved that idea.' : th.explicit ? 'Saved to your notes.' : "Saved — I've noted that." });
+    await this.runPlan({ type: 'note.create', text, idea: th.idea }, t, { done: th.idea ? 'Saved that idea.' : th.explicit ? 'Got it — that’s in your notes.' : "Saved — I've noted that." });
   }
 
   // ---- phone actions ---------------------------------------------------------------
@@ -2622,8 +2622,17 @@ function replacePerson(th: Thought, name: string, replacement: string): Thought 
   return x;
 }
 
+/** Mum, Dad, Nan… are names when you talk about your own family. */
+function warmNames(s: string): string {
+  return s.replace(/\b(mum|mom|dad|mummy|mommy|daddy|nan|nana|nanna|gran|granny|grandma|grandpa|grandad|granddad)\b/g, (w) => w[0].toUpperCase() + w.slice(1));
+}
+
 function lcFirst(s: string): string {
   if (!s) return s;
+  return warmNames(lcFirstRaw(s));
+}
+
+function lcFirstRaw(s: string): string {
   // Keep proper names ("Sarah") capitalised.
   const first = s.split(' ')[0];
   if (/^[A-Z][a-z]+$/.test(first) && ['Call', 'Message', 'Reply', 'Email', 'Book', 'Buy', 'Get', 'Pay', 'Send', 'Pick', 'Take', 'Check', 'Renew', 'Get', 'Tell', 'Text', 'Ring', 'Phone'].includes(first)) {

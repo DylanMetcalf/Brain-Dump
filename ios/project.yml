@@ -3,7 +3,6 @@
 # Set BRAIN_DUMP_SERVER in Config.xcconfig to your Render address first.
 name: BrainDump
 options:
-  bundleIdPrefix: app.braindump
   deploymentTarget:
     iOS: "17.0"
   createIntermediateGroups: true
@@ -20,6 +19,10 @@ targets:
   BrainDump:
     type: application
     platform: iOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(BD_BUNDLE_ID)
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     sources:
       - path: BrainDump
       - path: Shared
@@ -32,9 +35,12 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: { UIColorName: LaunchBackground }
+        UIUserInterfaceStyle: Light
         UIApplicationSupportsIndirectInputEvents: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         BDServerURL: $(BRAIN_DUMP_SERVER)
+        BDAppGroup: $(BD_APP_GROUP)
+        ITSAppUsesNonExemptEncryption: false
         CFBundleURLTypes:
           - CFBundleURLName: app.braindump
             CFBundleURLSchemes: [braindump]
@@ -51,13 +57,16 @@ targets:
     entitlements:
       path: BrainDump/BrainDump.entitlements
       properties:
-        com.apple.security.application-groups: [group.app.braindump]
+        com.apple.security.application-groups: [$(BD_APP_GROUP)]
     dependencies:
       - target: BrainDumpWidgets
   BrainDumpWidgets:
     type: app-extension
     platform: iOS
     deploymentTarget: "18.0"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(BD_BUNDLE_ID).widgets
     sources:
       - path: Widgets
       - path: Shared
@@ -67,12 +76,13 @@ targets:
         CFBundleDisplayName: Brain Dump
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        BDAppGroup: $(BD_APP_GROUP)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     entitlements:
       path: Widgets/Widgets.entitlements
       properties:
-        com.apple.security.application-groups: [group.app.braindump]
+        com.apple.security.application-groups: [$(BD_APP_GROUP)]
 schemes:
   BrainDump:
     build:

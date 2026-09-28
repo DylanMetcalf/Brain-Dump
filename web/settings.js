@@ -357,7 +357,7 @@ export async function renderShortcutScreen() {
           h('button', { class: 'pill-btn', onclick: async () => {
             test.textContent = 'Testing…';
             try {
-              const res = await fetch(r.appLink, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'What still needs me?' }) });
+              const res = await fetch(`${r.appLink}&test=1`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'What still needs me?' }) });
               test.textContent = res.ok ? `It works: “${(await res.json()).text}”` : `The link didn’t work (${res.status}).`;
             } catch {
               test.textContent = 'Couldn’t reach Brain Dump.';
@@ -448,7 +448,7 @@ export async function renderHistory() {
 // Sign up / sign in
 // ---------------------------------------------------------------------------
 
-function deviceLabel() {
+export function deviceLabel() {
   const ua = navigator.userAgent;
   if (/iPhone/.test(ua)) return 'iPhone';
   if (/iPad/.test(ua)) return 'iPad';

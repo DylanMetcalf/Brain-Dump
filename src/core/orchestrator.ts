@@ -28,6 +28,8 @@ export interface Fix {
   /** What to ask for / where to go (e.g. "calendar", "#shortcut", "google:calendar"). */
   target: string;
   label: string;
+  /** A direct link that does it (e.g. the TestFlight invite for the iPhone app). */
+  url?: string;
 }
 
 export interface IntegrationStatus {
@@ -54,6 +56,8 @@ export interface OrchestratorFacts {
   otherDevices: DeviceCaps[];
   server: {
     googleConfigured: boolean;
+    /** TestFlight (or App Store) link for the Brain Dump iPhone app, if the host has shipped it. */
+    iosAppUrl?: string;
     pushConfigured: boolean;
     claude: { configured: boolean; ok?: boolean; error?: string };
     naturalVoice: { configured: boolean; ok?: boolean; error?: string };
@@ -196,11 +200,18 @@ export function integrationStatus(f: OrchestratorFacts): IntegrationStatus[] {
       message: has(d, 'app-intents') ? 'Ready — say “Hey Siri, Brain Dump”.' : 'Siri actions didn’t register. Reopen Brain Dump and I’ll try again.',
       ...(has(d, 'app-intents') ? {} : { fix: { kind: 'retry', target: 'siri', label: 'Try again' } }) });
   } else if (iphoneWeb) {
-    const working = !!sync?.enabled && !!sync.lastRunAt;
-    add('siri', { via: 'Best with the Brain Dump iPhone app', selectable: true, suggested: false,
+    // Siri, real alarms, Reminders, Calendar and Contacts all come with the iPhone app — nothing to build.
+    const working = !!sync?.enabled && !!sync.shortcutSeenAt;
+    const url = f.server.iosAppUrl;
+    out.push({ id: 'siri', label: 'Siri & iPhone apps', selectable: true, suggested: !!url,
+      via: working ? 'Through your Brain Dump Shortcut' : 'With the Brain Dump iPhone app',
       health: working ? 'ok' : 'needs-you',
-      message: working ? 'Working through your Brain Dump Shortcut.' : 'For “Hey Siri” and your iPhone’s own apps, install the Brain Dump iPhone app (or use the optional Shortcut).',
-      ...(working ? {} : { fix: { kind: 'install', target: 'ios-app', label: 'How to get it' } }) });
+      message: working
+        ? 'Working through your Brain Dump Shortcut.'
+        : url
+          ? 'Install the Brain Dump iPhone app and Siri, real alarms, Reminders, your Calendar and Contacts all connect by themselves.'
+          : 'Siri and your iPhone’s own apps come with the Brain Dump iPhone app, once it’s been shipped to TestFlight.',
+      ...(working ? {} : { fix: { kind: 'install', target: 'ios-app', label: url ? 'Get the iPhone app' : 'How it works', ...(url ? { url } : {}) } }) });
   }
 
   // ---- Automatic (Health only) ----

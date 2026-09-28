@@ -29,6 +29,7 @@ export interface SetupDeps {
   broadcast: (userId: string, event: string, data: unknown) => void;
   googleConfigured: boolean;
   pushConfigured: boolean;
+  iosAppUrl?: string;
   /** Keys in use for this user (settings first, then server). */
   keys: (userId: string) => Promise<{ anthropic?: string; openai?: string }>;
   verifyClaude: (key: string) => Promise<{ ok: boolean; error?: string }>;
@@ -77,6 +78,7 @@ export function setupRoutes(d: SetupDeps) {
       otherDevices: Object.values(caps).filter((x) => x.deviceId !== device.id),
       server: {
         googleConfigured: d.googleConfigured,
+        iosAppUrl: d.iosAppUrl,
         pushConfigured: d.pushConfigured,
         claude: { configured: !!keys.anthropic, ok: c?.claude?.ok, error: c?.claude?.error },
         naturalVoice: { configured: !!keys.openai, ok: c?.voice?.ok, error: c?.voice?.error },

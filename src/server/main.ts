@@ -24,6 +24,7 @@ const app = await createApp({
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || undefined,
   openaiApiKey: process.env.OPENAI_API_KEY || undefined,
   shortcutUrl: process.env.SHORTCUT_URL || undefined,
+  iosAppUrl: process.env.TESTFLIGHT_URL || process.env.IOS_APP_URL || undefined,
   corsOrigins: process.env.CORS_ORIGINS?.split(',').map((s) => s.trim()).filter(Boolean),
   integrations: process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
     ? { google: { clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET } }

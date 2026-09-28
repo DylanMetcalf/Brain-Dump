@@ -393,6 +393,12 @@ function shareGlyph() {
   return svg;
 }
 
+/** From Settings: the iPhone app guide, with the TestFlight link if the host has shipped it. */
+export function openIphoneApp() {
+  const siri = ui.health?.statuses?.find((x) => x.id === 'siri');
+  iphoneAppGuide(siri?.fix?.url);
+}
+
 /** The iPhone app: install, then sign in by itself (no codes to type), then it sets itself up. */
 function iphoneAppGuide(url) {
   const done = new Set();

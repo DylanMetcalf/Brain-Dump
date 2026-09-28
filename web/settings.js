@@ -4,6 +4,7 @@ import { api, auth, LOCAL } from './api.js';
 import { h, icon, brandMark, toast, sheet, copyButton } from './ui.js';
 import { ui, app, page, loadState, refreshAll, homeSections, setHomeSections, boot, refreshSetup, refreshPhone, autoPhone, PHONE_SYNC_URL } from './app.js';
 import { isNative } from './device.js';
+import { openIphoneApp } from './setup.js';
 import { speak, stopSpeaking, deviceVoices, setDeviceVoice, loadVoiceInfo, setVoiceInfo, unlockAudio } from './speech.js';
 
 const SCOPES = {
@@ -73,7 +74,7 @@ export async function renderSettings() {
         ? `${ui.health.problems.length} thing${ui.health.problems.length > 1 ? 's' : ''} need${ui.health.problems.length > 1 ? '' : 's'} you`
         : 'Everything Brain Dump is connected to, and whether it’s working', () => (location.hash = '#health')),
       linkRow('sparkle', 'Set up again', 'Choose what Brain Dump works with', () => { try { sessionStorage.removeItem('bd.setupFlow'); } catch {} location.hash = '#setup'; }),
-      !isNative && isIOS() ? linkRow('iphone', 'Siri & iPhone apps (Shortcut)', phone?.enabled ? 'On — through your Brain Dump Shortcut' : 'Optional, until the Brain Dump iPhone app is installed', () => (location.hash = '#shortcut')) : null),
+      !isNative && isIOS() ? linkRow('iphone', 'Get the Brain Dump iPhone app', 'Siri, real alarms, Reminders, your Calendar and Contacts — nothing to build', () => openIphoneApp()) : null),
 
     group('You and your assistant',
       setRow('Assistant’s name', h('input', { class: 'inline-input', value: p.assistantName ?? '', 'aria-label': 'Assistant name', onchange: (e) => patchProfile({ assistantName: e.target.value }) })),

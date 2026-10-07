@@ -89,7 +89,7 @@ export function brandMark(size = 28, { onDark = false } = {}) {
   svg.setAttribute('aria-hidden', 'true');
   const bubble = onDark ? '#ffffff' : `url(#${id})`;
   const spark = onDark ? `url(#${id})` : '#ffffff';
-  svg.innerHTML = `<defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFB36B"/><stop offset=".5" stop-color="#FF5F6D"/><stop offset="1" stop-color="#8E54E9"/></linearGradient></defs>
+  svg.innerHTML = `<defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9AA5F2"/><stop offset=".6" stop-color="#6B74D6"/><stop offset="1" stop-color="#5A86D8"/></linearGradient></defs>
     <circle cx="282" cy="758" r="60" fill="${bubble}" opacity=".55"/>
     <circle cx="418" cy="598" r="98" fill="${bubble}" opacity=".8"/>
     <circle cx="610" cy="396" r="196" fill="${bubble}"/>

@@ -1,24 +1,29 @@
-/* Brain Dump — warm and bright: soft white, charcoal text, a sunset gradient for Brain Dump itself. */
+/* Brain Dump — calm: low-glare off-white, soft slate text, one quiet periwinkle accent.
+   Colour is used sparingly so the screen rests easy on the eye. */
 :root {
-  --bg: #ffffff;
+  --bg: #f8f9fc;
   --surface: #ffffff;
-  --surface-2: #f7f4f3;
-  --surface-3: #ede8e7;
-  --text: #1d1a20;
-  --muted: #76707a;
-  --line: #efeaea;
-  --accent: #f0506e;
-  --accent-2: #ff8a6b;
-  --accent-ink: #c4304c;
-  --accent-soft: #fff0f1;
+  --surface-2: #f1f3f8;
+  --surface-3: #e4e7f0;
+  --text: #2b2f3c;
+  --muted: #6f7486;
+  --line: #e6e9f1;
+  --accent: #6b74d6;
+  --accent-strong: #5660c7;
+  --accent-2: #93b3ee;
+  --accent-ink: #4b54b4;
+  --accent-soft: #eef0fc;
   --on-accent: #ffffff;
-  --ink: #1d1a20;
-  --grad: linear-gradient(135deg, #ffb36b 0%, #ff5f6d 50%, #8e54e9 100%);
-  --grad-soft: linear-gradient(135deg, #fff4ea 0%, #ffecef 50%, #f3ecff 100%);
-  --good: #1a9467;
-  --danger: #d23b3b;
-  --shadow: 0 1px 2px rgba(60, 20, 40, .04), 0 8px 24px rgba(60, 20, 40, .07);
-  --radius: 22px;
+  --ink: #2b2f3c;
+  --grad: linear-gradient(140deg, #a5b0f4 0%, #7a84e0 52%, #8fb6ef 100%);
+  --grad-soft: linear-gradient(140deg, #f1f2fd 0%, #eef4fd 100%);
+  --good: #2e8a6c;
+  --good-soft: #e8f5ef;
+  --warn-ink: #8a5a00;
+  --warn-soft: #fdf4e3;
+  --danger: #c94848;
+  --shadow: 0 1px 2px rgba(32, 38, 72, .04), 0 6px 18px rgba(32, 38, 72, .06);
+  --radius: 20px;
   --tabbar: 64px;
   color-scheme: light;
 }
@@ -308,50 +313,74 @@ details.card[open] > summary { margin-bottom: 8px; }
 .adv-v { font-size: 13px; text-align: right; max-width: 60%; overflow-wrap: anywhere; }
 
 
-/* ================= Warm theme: where the gradient lives ================= */
+/* ================= Calm theme: quiet surfaces, one accent ================= */
+body { line-height: 1.5; }
 a, .see-all, .btn.text, .back, .undo { color: var(--accent-ink); }
-.brand span { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.page-head h1, .sub-title, .greeting, .setup-title { font-weight: 700; letter-spacing: -.02em; }
+.greeting { font-size: 28px; color: var(--text); }
+.brand span { color: var(--text); font-weight: 650; }
+
+/* Tab bar: white glass, the talk button is the only colour */
+.tabbar { background: color-mix(in srgb, #ffffff 88%, transparent); border-top-color: var(--line); }
+.tab { color: #8a8fa0; }
 .tab.on { color: var(--accent-ink); }
-.talk-dot { background: var(--grad); box-shadow: 0 8px 22px rgba(255, 95, 109, .35), 0 0 0 5px var(--bg); }
-.tab-talk.on .talk-dot { background: var(--grad); filter: saturate(1.15) brightness(.97); }
-.hero { background: var(--grad); box-shadow: 0 14px 34px rgba(240, 80, 110, .28); }
-.hero-mark { background: rgba(255, 255, 255, .22); }
-.hero-type { box-shadow: 0 2px 10px rgba(60, 20, 40, .08); }
-.icon-btn.accent { background: var(--grad); color: #fff; }
-.btn.primary, .pill-btn.accent { background: var(--ink); color: #fff; }
-.quick-btn { background: var(--surface-2); }
-.quick-ic { color: var(--accent); background: #fff; }
+.talk-dot { background: var(--grad); box-shadow: 0 6px 16px rgba(90, 100, 200, .28), 0 0 0 5px var(--bg); }
+.tab-talk.on .talk-dot { background: var(--grad); filter: saturate(1.1) brightness(.96); }
+
+/* Home: a soft card instead of a loud banner */
+.hero { background: var(--surface); color: var(--text); border: 1px solid var(--line); box-shadow: var(--shadow); }
+.hero-mark { background: var(--grad); box-shadow: 0 6px 16px rgba(90, 100, 200, .22); }
+.hero-text strong { color: var(--text); }
+.hero-text span { color: var(--muted); opacity: 1; }
+.hero-type { background: var(--surface-2); box-shadow: none; }
+.quick-btn { background: var(--surface); border: 1px solid var(--line); }
+.quick-ic { color: var(--accent); background: var(--accent-soft); box-shadow: none; }
+.card { box-shadow: none; }
+.card.setup { background: var(--grad-soft); border-color: transparent; }
 .row-ic, .q-ic, .choose-ic, .action-ic { color: var(--accent); background: var(--accent-soft); }
-.check.done { background: var(--grad); border-color: transparent; }
+.check.done { background: var(--accent); border-color: var(--accent); }
 .chip { background: var(--accent-soft); color: var(--accent-ink); }
 .switch.on { background: var(--accent); }
-.card.setup { background: var(--grad-soft); }
-.msg.user .bubble { background: linear-gradient(135deg, #ff7f6b, #e8508c); color: #fff; }
-.msg.assistant .bubble { background: var(--surface-2); }
-.composer textarea:focus, .field input:focus, .field textarea:focus { border-color: var(--accent-2); }
+
+/* Buttons: one gentle primary colour */
+.btn.primary, .pill-btn.accent { background: var(--accent-strong); color: #fff; }
+.icon-btn.accent { background: var(--accent-strong); color: #fff; }
+.btn { border-radius: 14px; }
+
+/* Chat: her words tinted, Brain Dump's on white — easy to tell apart, nothing shouts */
+.msg.user .bubble { background: var(--accent-soft); color: var(--text); }
+.msg.assistant .bubble { background: var(--surface); border: 1px solid var(--line); }
+.composer { background: var(--bg); }
+.composer textarea { background: var(--surface); }
+.composer textarea:focus, .field input:focus, .field textarea:focus { border-color: var(--accent-2); box-shadow: 0 0 0 3px var(--accent-soft); }
 .seg.on { color: var(--text); }
 
-/* The orb: alive, warm, gently moving while it listens */
-.orb { background: var(--grad); background-size: 180% 180%; box-shadow: 0 20px 55px rgba(240, 80, 110, .35); }
-.orb-ring { border-color: rgba(240, 80, 110, .45); }
-.orb.listening { animation: breathe 2.2s ease-in-out infinite, flow 5s ease-in-out infinite; }
-.orb.thinking { animation: flow 1.6s ease-in-out infinite; opacity: .9; }
+/* The orb: soft lavender to sky, breathing slowly while it listens */
+.orb { background: var(--grad); background-size: 170% 170%; box-shadow: 0 18px 44px rgba(90, 100, 200, .25); }
+.orb-ring { border-color: rgba(107, 116, 214, .35); }
+.orb.listening { animation: breathe 2.6s ease-in-out infinite, flow 7s ease-in-out infinite; }
+.orb.thinking { animation: flow 2s ease-in-out infinite; opacity: .92; }
 @keyframes flow { 0%, 100% { background-position: 0% 30%; } 50% { background-position: 100% 70%; } }
 @media (prefers-reduced-motion: reduce) { .orb { animation: none !important; } }
+.talk-voice.on { background: var(--accent-soft); color: var(--accent-ink); }
 
-.setup-mark, .welcome-mark { background: var(--grad); box-shadow: 0 16px 40px rgba(240, 80, 110, .3); }
+/* Setup and status */
+.setup-mark, .welcome-mark { background: var(--grad); box-shadow: 0 14px 34px rgba(90, 100, 200, .25); }
 .setup-say { color: var(--accent-ink); }
+.choose { background: var(--surface); }
 .choose.on { border-color: var(--accent); background: var(--accent-soft); }
-.choose.on .choose-box { background: var(--grad); border-color: transparent; }
-.q-status.ok { background: #e9f7f0; color: var(--good); }
+.choose.on .choose-box { background: var(--accent); border-color: var(--accent); }
+.q-status.ok { background: var(--good-soft); color: var(--good); }
+.q-status.needs { background: var(--warn-soft); color: var(--warn-ink); }
+.health-sum.warn { background: var(--warn-soft); border-color: transparent; }
 .ready-item { background: var(--accent-soft); color: var(--accent-ink); }
-.health-sum.warn { background: #fff6e8; }
-.q-status.needs { background: #fff3df; color: #a15c00; }
 .toast { background: var(--ink); color: #fff; }
 .toast .pill-btn { background: rgba(255, 255, 255, .16); color: #fff; }
+.sheet { background: var(--bg); }
+.group-body, .queue { box-shadow: none; }
 
 /* ---------- Guides that do it for you ---------- */
-.coach { position: fixed; inset: 0; z-index: 60; background: rgba(29, 26, 32, .45); display: flex; align-items: flex-end; justify-content: center; padding: 16px 16px calc(env(safe-area-inset-bottom) + 70px); animation: fade .18s ease; }
+.coach { position: fixed; inset: 0; z-index: 60; background: rgba(30, 34, 52, .42); display: flex; align-items: flex-end; justify-content: center; padding: 16px 16px calc(env(safe-area-inset-bottom) + 70px); animation: fade .18s ease; }
 .coach-card { width: 100%; max-width: 420px; background: #fff; border-radius: 28px; padding: 20px 20px 14px; box-shadow: 0 20px 60px rgba(29, 26, 32, .3); animation: up .22s ease; }
 .coach-card h2 { margin: 12px 0 4px; font-size: 21px; letter-spacing: -.01em; }
 .coach-card p { margin: 0 0 8px; color: var(--muted); }
@@ -382,5 +411,5 @@ a, .see-all, .btn.text, .back, .undo { color: var(--accent-ink); }
 .guide-step:first-of-type { border-top: 0; }
 .guide-step .btn { margin-top: 10px; align-self: flex-start; }
 .guide-n { width: 28px; height: 28px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-ink); font-weight: 700; font-size: 14px; }
-.guide-step.done .guide-n { background: var(--grad); color: #fff; }
+.guide-step.done .guide-n { background: var(--accent); color: #fff; }
 .guide-step.done strong { color: var(--muted); }

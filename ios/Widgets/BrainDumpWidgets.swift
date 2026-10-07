@@ -2,9 +2,9 @@ import WidgetKit
 import SwiftUI
 import AppIntents
 
-/// The Brain Dump sunset: peach → coral → violet.
+/// The Brain Dump gradient: soft lavender → periwinkle → sky.
 private let brandGradient = LinearGradient(
-    colors: [Color(red: 1.0, green: 0.70, blue: 0.42), Color(red: 1.0, green: 0.37, blue: 0.43), Color(red: 0.56, green: 0.33, blue: 0.91)],
+    colors: [Color(red: 0.60, green: 0.65, blue: 0.95), Color(red: 0.42, green: 0.455, blue: 0.84), Color(red: 0.35, green: 0.53, blue: 0.85)],
     startPoint: .topLeading, endPoint: .bottomTrailing)
 
 struct TalkEntry: TimelineEntry {

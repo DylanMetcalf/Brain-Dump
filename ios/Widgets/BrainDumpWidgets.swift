@@ -35,14 +35,14 @@ struct TalkWidgetView: View {
             .widgetURL(Shared.talkURL)
         case .accessoryRectangular:
             VStack(alignment: .leading) {
-                Label("Brain Dump", systemImage: "mic.fill").font(.headline)
+                Label("Brain Dump", systemImage: "scribble.variable").font(.headline)
                 Text(entry.snapshot?.next ?? "Tap to talk").font(.caption).lineLimit(2)
             }
             .widgetURL(Shared.talkURL)
         default:
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Image(systemName: "sparkles").font(.title3.weight(.semibold))
+                    Image(systemName: "scribble.variable").font(.title3.weight(.semibold))
                     Spacer()
                     if let n = entry.snapshot?.needs, n > 0 {
                         Text("\(n)").font(.caption.bold()).padding(.horizontal, 7).padding(.vertical, 2).background(.white.opacity(0.25), in: Capsule())

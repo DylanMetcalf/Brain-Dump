@@ -364,7 +364,7 @@ function homeScreenCoach() {
   const art = (kind) => {
     if (kind === 'share') return h('div', { class: 'coach-art' }, h('div', { class: 'mock-bar' }, h('span', { class: 'mock-btn' }), h('span', { class: 'mock-btn' }), h('span', { class: 'mock-btn share' }, shareGlyph()), h('span', { class: 'mock-btn' }), h('span', { class: 'mock-btn' })));
     if (kind === 'add') return h('div', { class: 'coach-art' }, h('div', { class: 'mock-sheet' }, h('div', { class: 'mock-row' }, 'Copy'), h('div', { class: 'mock-row' }, 'Add to Reading List'), h('div', { class: 'mock-row hi' }, 'Add to Home Screen', h('span', { class: 'mock-plus' }, '+')), h('div', { class: 'mock-row' }, 'Find on Page')));
-    return h('div', { class: 'coach-art' }, h('div', { class: 'mock-add' }, h('span', {}, 'Cancel'), h('strong', {}, 'Add to Home Screen'), h('span', { class: 'mock-add-btn' }, 'Add')), h('div', { class: 'mock-icon' }, h('img', { src: '/icon-180.png?v=5', alt: '' }), h('span', {}, 'Brain Dump')));
+    return h('div', { class: 'coach-art' }, h('div', { class: 'mock-add' }, h('span', {}, 'Cancel'), h('strong', {}, 'Add to Home Screen'), h('span', { class: 'mock-add-btn' }, 'Add')), h('div', { class: 'mock-icon' }, h('img', { src: '/icon-180.png?v=7', alt: '' }), h('span', {}, 'Brain Dump')));
   };
   const wrap = h('div', { class: 'coach', role: 'dialog', 'aria-label': 'Add to Home Screen' });
   const draw = () => {

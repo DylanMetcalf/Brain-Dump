@@ -76,24 +76,23 @@ export function icon(name, size = 22) {
 }
 
 /**
- * The Brain Dump mark: thoughts rising out of your head — three bubbles and a spark.
- * onDark: white bubbles with a gradient spark (on gradient buttons); otherwise gradient bubbles.
+ * The Brain Dump mark: a tangled thought straightening out into one calm line.
+ * onDark: white (on the gradient); otherwise in the brand gradient.
  */
 let markSeq = 0;
 export function brandMark(size = 28, { onDark = false } = {}) {
   const id = `bdg${++markSeq}`;
   const svg = document.createElementNS(SVG, 'svg');
-  svg.setAttribute('viewBox', '150 150 720 720');
+  svg.setAttribute('viewBox', '100 92 840 840');
   svg.setAttribute('width', String(size));
   svg.setAttribute('height', String(size));
   svg.setAttribute('aria-hidden', 'true');
-  const bubble = onDark ? '#ffffff' : `url(#${id})`;
-  const spark = onDark ? `url(#${id})` : '#ffffff';
-  svg.innerHTML = `<defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9AA5F2"/><stop offset=".6" stop-color="#6B74D6"/><stop offset="1" stop-color="#5A86D8"/></linearGradient></defs>
-    <circle cx="282" cy="758" r="60" fill="${bubble}" opacity=".55"/>
-    <circle cx="418" cy="598" r="98" fill="${bubble}" opacity=".8"/>
-    <circle cx="610" cy="396" r="196" fill="${bubble}"/>
-    <path d="M610 290c13 66 42 94 106 106-64 12-93 41-106 106-13-65-42-94-106-106 64-12 93-40 106-106z" fill="${spark}"/>`;
+  const ink = onDark ? '#ffffff' : `url(#${id})`;
+  svg.innerHTML = `<defs><linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="150" y1="380" x2="900" y2="640"><stop offset="0" stop-color="#9AA5F2"/><stop offset=".6" stop-color="#6B74D6"/><stop offset="1" stop-color="#5A86D8"/></linearGradient></defs>
+    <g transform="translate(540 512) scale(1.08) translate(-530 -490)">
+      <path d="M190 560 C190 420 330 380 380 470 C420 545 330 620 290 560 C240 485 330 380 440 410 C540 438 520 560 450 560 C390 560 410 470 500 470 C580 470 610 512 690 512 L770 512" fill="none" stroke="${ink}" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="842" cy="512" r="42" fill="${ink}"/>
+    </g>`;
   return svg;
 }
 
